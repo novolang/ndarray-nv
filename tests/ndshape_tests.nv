@@ -1,0 +1,173 @@
+// ndshape_tests.nv — the API suite for the layout.
+//
+// RED ON PURPOSE, like every suite in this package: the bodies are
+// `todo()`, so each assertion reaches `not implemented:
+// ndarray-nv.<module>.<fn>`.  `novo test tests/ndshape_tests.nv
+// --isolate` gives every `@test` its own process and prints which
+// function each one stopped at, which is the readable form of an
+// interface package's verdict.
+//
+// What is asserted is the CONTRACT, not the state: the fixtures are
+// written by hand, because a shape is three lists and nothing has to
+// exist for a reader to say what `broadcast` owes them.
+
+use std.test
+use ndshape
+
+// The row-major 2-by-3, written out rather than constructed.
+fn two_by_three() -> NdShape
+    NdShape { dims: [2, 3], strides: [3, 1] }
+
+@test
+fn test_of_dims_builds_row_major_strides() [io]
+    test.case("the last axis has stride 1")
+    let s = ndshape.of_dims([2, 3])
+    test.assert(s.dims == [2, 3])
+    test.assert(s.strides == [3, 1])
+
+    test.case("a rank-3 shape multiplies right to left")
+    test.assert(ndshape.of_dims([2, 3, 4]).strides == [12, 4, 1])
+
+    test.case("a rank-1 shape is a single unit stride")
+    test.assert(ndshape.of_dims([5]).strides == [1])
+
+@test
+fn test_scalar_has_rank_zero_and_size_one() [io]
+    test.case("no axes")
+    let s = ndshape.scalar()
+    test.assert(ndshape.rank(s) == 0)
+
+    test.case("the empty product is one element")
+    test.assert(ndshape.size(s) == 1)
+
+@test
+fn test_rank_and_size_read_the_dims() [io]
+    test.case("rank is how many axes")
+    test.assert(ndshape.rank(two_by_three()) == 2)
+
+    test.case("size is the product")
+    test.assert(ndshape.size(two_by_three()) == 6)
+
+    test.case("a zero extent empties the array without changing its rank")
+    let empty = ndshape.of_dims([2, 0, 3])
+    test.assert(ndshape.rank(empty) == 3)
+    test.assert(ndshape.size(empty) == 0)
+
+@test
+fn test_is_packed_is_true_for_a_fresh_shape() [io]
+    test.case("row-major strides are packed")
+    test.assert(ndshape.is_packed(two_by_three()))
+
+    test.case("a stretched axis is not")
+    test.assert(ndshape.is_packed(NdShape { dims: [2, 3], strides: [0, 1] }) == false)
+
+@test
+fn test_flat_index_walks_the_strides() [io]
+    test.case("element [1, 2] of a 2-by-3 is at 5")
+    match ndshape.flat_index(two_by_three(), [1, 2])
+        Ok(n)  => test.assert(n == 5)
+        Err(e) => test.fail("flat_index of a legal index failed: ${e.message()}")
+
+    test.case("a short index is a rank mismatch, not an out-of-range")
+    match ndshape.flat_index(two_by_three(), [1])
+        Ok(_)  => test.fail("a one-coordinate index answered for a rank-2 shape")
+        Err(e) =>
+            match e
+                NdRankMismatch(want, got) =>
+                    test.assert(want == 2)
+                    test.assert(got == 1)
+                _                         => test.fail("a short index reported something other than NdRankMismatch")
+
+    test.case("a coordinate off the end is an index error")
+    match ndshape.flat_index(two_by_three(), [2, 0])
+        Ok(_)  => test.fail("row 2 of a 2-row shape answered")
+        Err(e) =>
+            match e
+                NdIndexOutOfRange(index, dims) =>
+                    test.assert(index == [2, 0])
+                    test.assert(dims == [2, 3])
+                _                              => test.fail("an off-the-end index reported something else")
+
+@test
+fn test_broadcast_follows_the_right_aligned_rule() [io]
+    test.case("[3, 1] and [1, 4] stretch to [3, 4]")
+    match ndshape.broadcast(ndshape.of_dims([3, 1]), ndshape.of_dims([1, 4]))
+        Ok(s)  => test.assert(s.dims == [3, 4])
+        Err(e) => test.fail("a legal broadcast failed: ${e.message()}")
+
+    test.case("a shorter shape pads on the LEFT")
+    match ndshape.broadcast(ndshape.of_dims([2, 3]), ndshape.of_dims([3]))
+        Ok(s)  => test.assert(s.dims == [2, 3])
+        Err(e) => test.fail("[2, 3] with [3] failed: ${e.message()}")
+
+    test.case("a scalar agrees with everything")
+    match ndshape.broadcast(ndshape.scalar(), ndshape.of_dims([2, 3]))
+        Ok(s)  => test.assert(s.dims == [2, 3])
+        Err(e) => test.fail("a scalar failed to broadcast: ${e.message()}")
+
+    test.case("unequal extents that are not 1 do not broadcast")
+    match ndshape.broadcast(ndshape.of_dims([2, 3]), ndshape.of_dims([4]))
+        Ok(_)  => test.fail("[2, 3] and [4] claimed to broadcast")
+        Err(e) =>
+            match e
+                NdNotBroadcastable(left, right) =>
+                    test.assert(left == [2, 3])
+                    test.assert(right == [4])
+                _                               => test.fail("a failed broadcast reported something else")
+
+@test
+fn test_swap_axes_moves_dims_and_strides_together() [io]
+    test.case("both lists move")
+    match ndshape.swap_axes(two_by_three(), 0, 1)
+        Ok(s)  =>
+            test.assert(s.dims == [3, 2])
+            test.assert(s.strides == [1, 3])
+        Err(e) => test.fail("a legal swap failed: ${e.message()}")
+
+    test.case("an axis past the rank is refused")
+    match ndshape.swap_axes(two_by_three(), 0, 2)
+        Ok(_)  => test.fail("axis 2 of a rank-2 shape was accepted")
+        Err(e) =>
+            match e
+                NdAxisOutOfRange(axis, rank) =>
+                    test.assert(axis == 2)
+                    test.assert(rank == 2)
+                _                            => test.fail("a bad axis reported something else")
+
+@test
+fn test_reverse_axes_is_its_own_inverse() [io]
+    test.case("a matrix transposes")
+    test.assert(ndshape.reverse_axes(two_by_three()).dims == [3, 2])
+
+    test.case("twice is the shape back")
+    test.assert(ndshape.reverse_axes(ndshape.reverse_axes(two_by_three())).dims == [2, 3])
+
+    test.case("rank 1 is unchanged, which is numpy's answer")
+    test.assert(ndshape.reverse_axes(ndshape.of_dims([5])).dims == [5])
+
+@test
+fn test_drop_axis_lowers_the_rank_by_one() [io]
+    test.case("dropping the outer axis of a 2-by-3 leaves a 3")
+    match ndshape.drop_axis(two_by_three(), 0)
+        Ok(s)  =>
+            test.assert(s.dims == [3])
+            test.assert(ndshape.rank(s) == 1)
+        Err(e) => test.fail("a legal drop failed: ${e.message()}")
+
+    test.case("an axis that is not there is refused")
+    match ndshape.drop_axis(two_by_three(), 5)
+        Ok(_)  => test.fail("axis 5 of a rank-2 shape was dropped")
+        Err(_) => test.assert(true)
+
+@test
+fn test_fits_bounds_the_buffer_by_what_the_shape_reaches() [io]
+    test.case("a packed 2-by-3 needs six elements")
+    test.assert(ndshape.fits(two_by_three(), 0, 6))
+    test.assert(ndshape.fits(two_by_three(), 0, 5) == false)
+
+    test.case("an offset moves the window")
+    test.assert(ndshape.fits(two_by_three(), 2, 8))
+    test.assert(ndshape.fits(two_by_three(), 2, 6) == false)
+
+    test.case("a stretched axis addresses no new memory")
+    test.assert(ndshape.fits(NdShape { dims: [4, 3], strides: [0, 1] }, 0, 3))

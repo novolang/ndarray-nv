@@ -1,0 +1,1042 @@
+// ndfloat.nv — the N-dimensional array of Float, which is the one a
+// notebook spends its day in.
+//
+// WHY THERE IS NO `NdArray<T>`, AND WHY THIS PACKAGE PUBLISHES TWO
+// CONCRETE TYPES INSTEAD.  It was measured, not assumed.  A generic
+// container and a generic function over it compile and run perfectly
+// well inside ONE module.  Called from a SECOND module they do not: a
+// generic call answering with the generic struct stops the compiler
+// with E6000, one answering with a plain Int lowers its result as a
+// pointer and fails IR verification, and annotating the destination
+// rescues neither.  A library is nothing BUT a module boundary, so a
+// generic array here would be a type nobody outside the package could
+// call.  Two concrete arrays that work are worth more than one generic
+// array that does not.
+//
+// The eventual answer is still one type, and nothing in this surface
+// would have to move to reach it: `NdFloat` and `NdInt` carry the same
+// members in the same order and name the same functions in the same
+// order, so they collapse into `NdArray<T>` by deletion rather than by
+// redesign.  The README's "The load-bearing interface" section carries
+// the measurement in full.
+//
+// WHY THE BUFFER IS `[Float]` AND NOT `std.array`'s `ArrayF64`.  Every
+// method on `ArrayF64` is `[io]`, because it is a handle over an FFI
+// allocation and reading a cell is a call out.  A `core` package may
+// not spend an effect to read its own element, so a flat `[Float]` —
+// which the compiler already unboxes — is the buffer, and an
+// implementation that wants the FFI array back can have it the day
+// `std.array` is spellable without `[io]`.
+//
+// WHY THERE IS NO `add_scalar` BESIDE `add`.  `scalar(3.0)` is a
+// rank-0 array, and a rank-0 array broadcasts against everything, so
+// `add(a, scalar(3.0))` is the scalar case of `add` rather than a
+// second function with its own tests and its own error rows.  Twelve
+// functions saved, and the one arithmetic surface says what numpy
+// means when it calls a scalar a zero-dimensional array.
+//
+// WHAT IS A VIEW AND WHAT IS A COPY.  `reshape` of a packed array,
+// `transpose`, `swap_axes`, `slice_axis`, `index_axis` and
+// `broadcast_to` are VIEWS — a new shape over the same buffer, free,
+// and safe because a novo-lang list is a value that nobody can write
+// through.  Everything else materialises.  `pack` is the deliberate
+// copy.  `ndshape`'s module comment is where that is argued.
+//
+// NOTHING HERE IS IN-PLACE.  `with` returns a new array; there is no
+// `set`.  That is what keeps the package `[]` — `[mutate]` is a host
+// effect — and it is what makes every view safe.
+
+// An N-dimensional array of Float over a flat buffer.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  => println("${ndfloat.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub struct NdFloat
+    // The flat buffer.  Its length is not the array's size: a view
+    // addresses a window inside it, and a broadcast axis reads one
+    // element many times.
+    data: [Float]
+    // The extents and the strides — see `ndshape`.
+    shape: NdShape
+    // The flat position of element `[0, 0, …]`.  Non-zero exactly
+    // when this array is a view that starts inside a larger buffer.
+    offset: Int
+
+// An array over these numbers, in this shape, row-major.
+//
+// `NdSizeMismatch` when the product of `dims` is not the length of
+// `data`, and `NdBadRange` for a negative dimension.  The result is
+// packed, so `to_list` gives back what was passed in.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+//         Ok(a)  => println("${ndfloat.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn of_list(data: [Float], dims: [Int]) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.of_list")
+
+// The rank-0 array holding one number.
+//
+// The scalar broadcasts against every shape, which is why this
+// package's arithmetic takes two arrays and never an array and a
+// number.  See the module comment.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     println("${ndfloat.sum(ndfloat.scalar(3.0))}")
+// ```
+pub fn scalar(value: Float) -> NdFloat
+    todo("ndarray-nv.ndfloat.scalar")
+
+// An array of this shape, every element 0.0.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 3])
+//         Ok(a)  => println("${ndfloat.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn zeros(dims: [Int]) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.zeros")
+
+// An array of this shape, every element 1.0.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.ones([2, 3])
+//         Ok(a)  => println("${ndfloat.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn ones(dims: [Int]) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.ones")
+
+// An array of this shape, every element the same number.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.filled([2, 2], 7.5)
+//         Ok(a)  => println("${ndfloat.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn filled(dims: [Int], value: Float) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.filled")
+
+// The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
+//
+// Half-open, like numpy's and like a range: `arange(0.0, 3.0, 1.0)` is
+// three elements.  `NdBadRange` when `step` is 0.0, or when it points
+// away from `stop` — both are inputs with no finite answer, and
+// returning an empty array for them hides a typo.
+//
+// A negative step counts down, so `arange(3.0, 0.0, -1.0)` is
+// `[3.0, 2.0, 1.0]`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.arange(0.0, 3.0, 1.0)
+//         Ok(a)  => println("${ndfloat.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn arange(start: Float, stop: Float, step: Float) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.arange")
+
+// `count` evenly spaced numbers from `start` to `stop`, both INCLUDED.
+//
+// The other half of `arange`, and the reason both exist: `arange` is
+// half-open and counts by a step, `linspace` is closed and counts by a
+// length, and a plot's x-axis wants the second.  The last element is
+// exactly `stop` rather than the accumulation of `count - 1` steps, so
+// `linspace(0.0, 1.0, 11)` ends at 1.0 and not at 0.9999999999999999.
+//
+// `NdBadRange` for a `count` below 2, where "evenly spaced from start
+// to stop" names no array.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.linspace(0.0, 1.0, 5)
+//         Ok(a)  => println("${ndfloat.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn linspace(start: Float, stop: Float, count: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.linspace")
+
+// The `n`-by-`n` identity matrix.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.eye(3)
+//         Ok(a)  => println("${ndfloat.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn eye(n: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.eye")
+
+// This array's layout.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 3])
+//         Ok(a)  => println("${ndfloat.shape(a).dims}")
+//         Err(e) => println(e.message())
+// ```
+pub fn shape(a: NdFloat) -> NdShape
+    todo("ndarray-nv.ndfloat.shape")
+
+// How many axes this array has.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 3])
+//         Ok(a)  => println("${ndfloat.rank(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn rank(a: NdFloat) -> Int
+    todo("ndarray-nv.ndfloat.rank")
+
+// How many elements this array has.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 3])
+//         Ok(a)  => println("${ndfloat.size(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn size(a: NdFloat) -> Int
+    todo("ndarray-nv.ndfloat.size")
+
+// The number at one full index.
+//
+// `index` carries one coordinate per axis, so a rank-2 array is read
+// with `[row, col]`.  A wrong-length index is `NdRankMismatch` and a
+// coordinate off the end is `NdIndexOutOfRange`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.at(a, [1, 0])
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn at(a: NdFloat, index: [Int]) -> Result<Float, NdFault>
+    todo("ndarray-nv.ndfloat.at")
+
+// The same array with one element changed — a new array, not a write.
+//
+// The result is packed and independent of `a`, so this costs a copy of
+// the whole buffer.  It is here because a notebook edits a cell, not
+// because it is the way to build an array: build one from a list.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 2])
+//         Ok(a)  =>
+//             match ndfloat.with(a, [0, 1], 5.0)
+//                 Ok(b)  => println("${ndfloat.sum(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn with(a: NdFloat, index: [Int], value: Float) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.with")
+
+// Every element in row-major order, view or not.
+//
+// This walks the strides, so it is correct for a transposed, sliced or
+// broadcast array — and a broadcast array's list repeats the stretched
+// element, which is the point.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0], [2])
+//         Ok(a)  => println("${ndfloat.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn to_list(a: NdFloat) -> [Float]
+    todo("ndarray-nv.ndfloat.to_list")
+
+// The same elements under a different shape.
+//
+// A VIEW when the array is packed — only the shape changes — and a
+// copy when it is not, because there is no set of strides that reads a
+// gapped buffer in a different rank.  `NdSizeMismatch` when the new
+// dims describe a different number of elements.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [4])
+//         Ok(a)  =>
+//             match ndfloat.reshape(a, [2, 2])
+//                 Ok(b)  => println("${ndfloat.shape(b).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn reshape(a: NdFloat, dims: [Int]) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.reshape")
+
+// Every axis reversed.  A view; it does not copy.
+//
+// For a matrix this is the transpose.  For rank 0 and rank 1 it is the
+// array unchanged, which is numpy's answer.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+//         Ok(a)  => println("${ndfloat.shape(ndfloat.transpose(a)).dims}")
+//         Err(e) => println(e.message())
+// ```
+pub fn transpose(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.transpose")
+
+// Two axes exchanged.  A view; it does not copy.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 3, 4])
+//         Ok(a)  =>
+//             match ndfloat.swap_axes(a, 0, 2)
+//                 Ok(b)  => println("${ndfloat.shape(b).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn swap_axes(a: NdFloat, first: Int, second: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.swap_axes")
+
+// The positions `[start, stop)` along one axis, every other axis
+// whole.  A view; it does not copy.
+//
+// Half-open, like every other range here.  Rank is unchanged — the
+// sliced axis is narrower, not gone — which is what makes a slice
+// stackable.  Out-of-order or out-of-range bounds are `NdBadRange`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([4, 3])
+//         Ok(a)  =>
+//             match ndfloat.slice_axis(a, 0, 1, 3)
+//                 Ok(b)  => println("${ndfloat.shape(b).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn slice_axis(a: NdFloat, axis: Int, start: Int, stop: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.slice_axis")
+
+// One position along one axis, with that axis DROPPED.  A view; it
+// does not copy.
+//
+// This is the row of a matrix: `index_axis(m, 0, 2)` is row 2 as a
+// rank-1 array.  The difference from `slice_axis(m, 0, 2, 3)` is the
+// rank — a slice of one keeps the axis, an index removes it — and both
+// are here because a notebook wants both.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([4, 3])
+//         Ok(a)  =>
+//             match ndfloat.index_axis(a, 0, 2)
+//                 Ok(r)  => println("${ndfloat.shape(r).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn index_axis(a: NdFloat, axis: Int, at: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.index_axis")
+
+// The array stretched to a shape it broadcasts to.  A view; it does
+// not copy, because a stretched axis is a stride of 0.
+//
+// The rule is `ndshape.broadcast`, and this is where a caller reaches
+// it directly — the arithmetic below does it for them.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+//         Ok(a)  =>
+//             match ndfloat.broadcast_to(a, [2, 3])
+//                 Ok(b)  => println("${ndfloat.size(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn broadcast_to(a: NdFloat, dims: [Int]) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.broadcast_to")
+
+// The same array over a fresh, contiguous, exactly-sized buffer.
+//
+// The only function here whose purpose is to copy.  Use it to let a
+// large buffer go when all that is wanted is a small view of it — see
+// `ndshape`'s module comment.  A packed array is returned unchanged.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([2, 3])
+//         Ok(a)  => println("${ndshape.is_packed(ndfloat.shape(ndfloat.pack(a)))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn pack(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.pack")
+
+// Element-by-element sum, broadcasting by `ndshape.broadcast`.
+//
+// `add(a, scalar(1.0))` is how a number is added to every element —
+// see the module comment on why there is no second function for it.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.add(a, ndfloat.scalar(10.0))
+//                 Ok(b)  => println("${ndfloat.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn add(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.add")
+
+// Element-by-element difference, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.ones([3])
+//         Ok(a)  =>
+//             match ndfloat.sub(a, a)
+//                 Ok(b)  => println("${ndfloat.sum(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn sub(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.sub")
+
+// Element-by-element product, broadcasting by `ndshape.broadcast`.
+//
+// NOT the matrix product — that is `matmul`, and the two are different
+// operations that numpy also keeps apart.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+//         Ok(a)  =>
+//             match ndfloat.mul(a, a)
+//                 Ok(b)  => println("${ndfloat.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn mul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.mul")
+
+// Element-by-element quotient, broadcasting by `ndshape.broadcast`.
+//
+// Division by zero is IEEE 754's answer — an infinity, or a NaN for
+// 0.0/0.0 — and not an error, because a notebook that divides a column
+// by a count wants the run to finish and the NaN to be visible.
+// `ndint.div` makes the opposite call, and says why.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.div(a, ndfloat.scalar(2.0))
+//                 Ok(b)  => println("${ndfloat.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn div(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.div")
+
+// Element-by-element `left` raised to `right`, broadcasting by
+// `ndshape.broadcast`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([2.0, 3.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.pow(a, ndfloat.scalar(2.0))
+//                 Ok(b)  => println("${ndfloat.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn pow(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.pow")
+
+// Every element negated.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.ones([3])
+//         Ok(a)  => println("${ndfloat.sum(ndfloat.neg(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn neg(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.neg")
+
+// Every element's magnitude.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([-1.0, 2.0], [2])
+//         Ok(a)  => println("${ndfloat.sum(ndfloat.abs(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn abs(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.abs")
+
+// Every element's square root; a negative element becomes NaN.
+//
+// NaN rather than an error, for the reason `div` gives: the run
+// finishes and the bad element is visible where it is.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([4.0, 9.0], [2])
+//         Ok(a)  => println("${ndfloat.to_list(ndfloat.sqrt(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn sqrt(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.sqrt")
+
+// Every element's natural exponential.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.zeros([3])
+//         Ok(a)  => println("${ndfloat.sum(ndfloat.exp(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn exp(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.exp")
+
+// Every element's natural logarithm; zero becomes negative infinity
+// and a negative element becomes NaN.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.ones([3])
+//         Ok(a)  => println("${ndfloat.sum(ndfloat.ln(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn ln(a: NdFloat) -> NdFloat
+    todo("ndarray-nv.ndfloat.ln")
+
+// Every element through a function of the caller's.
+//
+// The escape hatch for the transform this package does not name.  The
+// function is pure — this package is `core`, and a function that
+// reached for an effect could not be called from here at all — which
+// is the reason `map` is a signature and not a warning.
+//
+// ```novo
+// use ndfloat
+//
+// fn half(x: Float) -> Float
+//     x / 2.0
+//
+// fn main() [io]
+//     match ndfloat.ones([4])
+//         Ok(a)  => println("${ndfloat.sum(ndfloat.map(a, half))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn map(a: NdFloat, f: fn(Float) -> Float) -> NdFloat
+    todo("ndarray-nv.ndfloat.map")
+
+// Where two arrays are equal, broadcasting by `ndshape.broadcast`.
+//
+// Exact float equality, so NaN is equal to nothing including itself.
+// A notebook comparing computed floats wants `abs(sub(a, b))` against
+// a tolerance instead, and this function is honest rather than
+// helpful so that the choice stays the caller's.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.ones([3])
+//         Ok(a)  =>
+//             match ndfloat.eq(a, a)
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn eq(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndfloat.eq")
+
+// Where two arrays differ, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.ones([3])
+//         Ok(a)  =>
+//             match ndfloat.ne(a, ndfloat.scalar(0.0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn ne(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndfloat.ne")
+
+// Where `left` is below `right`, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 5.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.lt(a, ndfloat.scalar(3.0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn lt(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndfloat.lt")
+
+// Where `left` is at most `right`, broadcasting by
+// `ndshape.broadcast`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 5.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.le(a, ndfloat.scalar(1.0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn le(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndfloat.le")
+
+// Where `left` is above `right`, broadcasting by `ndshape.broadcast`.
+//
+// This is `a > 0`, which is the comparison a notebook writes most.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([-1.0, 5.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.gt(a, ndfloat.scalar(0.0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn gt(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndfloat.gt")
+
+// Where `left` is at least `right`, broadcasting by
+// `ndshape.broadcast`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([-1.0, 5.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.ge(a, ndfloat.scalar(5.0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn ge(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndfloat.ge")
+
+// The elements the mask picks, as a rank-1 array in row-major order.
+//
+// The rank falls to 1 whatever the array's rank was, because a
+// selection of scattered positions has no rectangle to keep.  The mask
+// must have the array's shape exactly — broadcasting a selection would
+// silently pick each element several times.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([-1.0, 5.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.gt(a, ndfloat.scalar(0.0))
+//                 Ok(m)  =>
+//                     match ndfloat.select(a, m)
+//                         Ok(p)  => println("${ndfloat.to_list(p)}")
+//                         Err(e) => println(e.message())
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn select(a: NdFloat, keep: NdMask) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.select")
+
+// `when_true` where the mask is true and `when_false` where it is
+// false, all three broadcasting by `ndshape.broadcast`.
+//
+// The shape-preserving companion to `select`: this is how a column is
+// cleaned in place — `where(mask, a, scalar(0.0))` — without changing
+// what fits beside it.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([-1.0, 5.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.gt(a, ndfloat.scalar(0.0))
+//                 Ok(m)  =>
+//                     match ndfloat.where(m, a, ndfloat.scalar(0.0))
+//                         Ok(c)  => println("${ndfloat.to_list(c)}")
+//                         Err(e) => println(e.message())
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn where(keep: NdMask, when_true: NdFloat, when_false: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.where")
+
+// Every element added up.
+//
+// The sum of nothing is 0.0 and needs no error, which is why this one
+// returns a bare Float where `mean` and `min` return a `Result`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+//         Ok(a)  => println("${ndfloat.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn sum(a: NdFloat) -> Float
+    todo("ndarray-nv.ndfloat.sum")
+
+// The arithmetic mean of every element.
+//
+// `NdEmptyReduction` on an empty array: the mean of nothing has no
+// value, and 0.0 would be a wrong answer rather than a missing one.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+//         Ok(a)  =>
+//             match ndfloat.mean(a)
+//                 Ok(m)  => println("${m}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn mean(a: NdFloat) -> Result<Float, NdFault>
+    todo("ndarray-nv.ndfloat.mean")
+
+// The smallest element.  `NdEmptyReduction` on an empty array.
+//
+// NaN is never the answer while a number is present, which is numpy's
+// `nanmin` rather than its `min` — a notebook's minimum should not be
+// destroyed by one bad row, and a caller who wants NaN to win can ask
+// for it with a comparison.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([3.0, 1.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.min(a)
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn min(a: NdFloat) -> Result<Float, NdFault>
+    todo("ndarray-nv.ndfloat.min")
+
+// The largest element, on the same NaN terms as `min`.
+// `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([3.0, 1.0], [2])
+//         Ok(a)  =>
+//             match ndfloat.max(a)
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn max(a: NdFloat) -> Result<Float, NdFault>
+    todo("ndarray-nv.ndfloat.max")
+
+// The full index of the smallest element; the FIRST one on a tie.
+//
+// A full index rather than a flat position, because the caller holds a
+// shaped array and a flat position would make them do the arithmetic
+// `at` already does.  `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([3.0, 1.0, 2.0], [3])
+//         Ok(a)  =>
+//             match ndfloat.argmin(a)
+//                 Ok(i)  => println("${i}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn argmin(a: NdFloat) -> Result<[Int], NdFault>
+    todo("ndarray-nv.ndfloat.argmin")
+
+// The full index of the largest element; the FIRST one on a tie.
+// `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([3.0, 1.0, 2.0], [3])
+//         Ok(a)  =>
+//             match ndfloat.argmax(a)
+//                 Ok(i)  => println("${i}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn argmax(a: NdFloat) -> Result<[Int], NdFault>
+    todo("ndarray-nv.ndfloat.argmax")
+
+// Sums along one axis, which is dropped.
+//
+// A rank-2 array summed along axis 0 gives a rank-1 array of column
+// totals.  The axis GOES rather than becoming 1: a notebook that wants
+// it kept reshapes, and a notebook that wants it gone would otherwise
+// reshape every time.  `NdAxisOutOfRange` for an axis this array does
+// not have.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.sum_axis(a, 0)
+//                 Ok(s)  => println("${ndfloat.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn sum_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.sum_axis")
+
+// Means along one axis, which is dropped.
+//
+// `NdEmptyReduction` when that axis has extent 0, because every mean
+// in the result would be a mean of nothing.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.mean_axis(a, 1)
+//                 Ok(s)  => println("${ndfloat.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn mean_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.mean_axis")
+
+// Smallest elements along one axis, which is dropped.
+// `NdEmptyReduction` when that axis has extent 0.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.min_axis(a, 0)
+//                 Ok(s)  => println("${ndfloat.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn min_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.min_axis")
+
+// Largest elements along one axis, which is dropped.
+// `NdEmptyReduction` when that axis has extent 0.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.max_axis(a, 0)
+//                 Ok(s)  => println("${ndfloat.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn max_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.max_axis")
+
+// Positions of the smallest element along one axis, which is dropped.
+//
+// An `NdInt` rather than an `NdFloat`, because a position is an
+// integer and rounding one through a double is how a large index
+// silently becomes the wrong index.  `NdEmptyReduction` when that axis
+// has extent 0.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.argmin_axis(a, 0)
+//                 Ok(s)  => println("${ndint.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn argmin_axis(a: NdFloat, axis: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndfloat.argmin_axis")
+
+// Positions of the largest element along one axis, which is dropped.
+// `NdEmptyReduction` when that axis has extent 0.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0], [2, 2])
+//         Ok(a)  =>
+//             match ndfloat.argmax_axis(a, 0)
+//                 Ok(s)  => println("${ndint.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn argmax_axis(a: NdFloat, axis: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndfloat.argmax_axis")
+
+// The inner product of two rank-1 arrays.
+//
+// Strictly rank 1 on both sides — `NdNotMatrix` otherwise — because
+// numpy's `dot` doing five different things at five different ranks is
+// the source of most of the confusion about it.  The matrix cases are
+// `matmul`.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+//         Ok(a)  =>
+//             match ndfloat.dot(a, a)
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn dot(left: NdFloat, right: NdFloat) -> Result<Float, NdFault>
+    todo("ndarray-nv.ndfloat.dot")
+
+// The matrix product.
+//
+// Both operands are rank 1 or rank 2.  A rank-1 LEFT operand is read
+// as one row and the result loses that axis again; a rank-1 RIGHT
+// operand is read as one column and the result loses that one — which
+// is numpy's rule, so `matmul(m, v)` of a 3-by-3 and a 3 is a 3.
+// `NdNotMatrix` above rank 2, `NdShapeMismatch` when the inner
+// dimensions disagree.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.eye(3)
+//         Ok(i)  =>
+//             match ndfloat.matmul(i, i)
+//                 Ok(p)  => println("${ndfloat.sum(p)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn matmul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
+    todo("ndarray-nv.ndfloat.matmul")
+
+// Every element truncated towards zero, as an `NdInt`.
+//
+// Truncation and not rounding, so that `to_int(scalar(-1.7))` is -1;
+// a caller who wants nearest adds 0.5 with the right sign first.
+//
+// ```novo
+// use ndfloat
+//
+// fn main() [io]
+//     match ndfloat.of_list([1.7, -1.7], [2])
+//         Ok(a)  => println("${ndint.to_list(ndfloat.to_int(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn to_int(a: NdFloat) -> NdInt
+    todo("ndarray-nv.ndfloat.to_int")

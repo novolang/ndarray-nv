@@ -1,0 +1,105 @@
+// ndfault.nv — the one thing that can go wrong, and the nine ways it
+// does.
+//
+// WHY ONE ERROR TYPE FOR THE WHOLE PACKAGE.  Every failure here is
+// the same failure wearing a different hat: the caller asked for an
+// operation the SHAPES do not admit.  Two arrays that cannot be
+// broadcast, an axis that is not there, an index off the end, a
+// reshape whose element count does not match, a mean of nothing.  A
+// second error type would only make a caller decide which `match` to
+// write, and the answer would always be "both".
+//
+// WHY EVERY VARIANT CARRIES THE NUMBERS.  A shape failure is a
+// mistake about dimensions, and a message that does not print the
+// dimensions sends the reader back to the source to guess which of
+// the four arrays in the expression was the wrong one.  So every
+// variant holds what it compared, and `message` prints both sides.
+//
+// WHY THE VARIANT NAMES ARE ALL `Nd`-PREFIXED.  An enum variant is
+// constructed by its bare name across the whole assembly, so
+// `ShapeMismatch` declared here would bind every `ShapeMismatch` in
+// any program that also depends on a package that declared one.  The
+// prefix is what keeps this package composable, and it is the rule in
+// `docs/publishing.md`, "Public type names are globally unique".
+
+// What an array operation could not do, and the shapes that made it
+// impossible.
+//
+// ```novo
+// use ndfault
+//
+// fn main() [io]
+//     let e = NdAxisOutOfRange(3, 2)
+//     println(e.message())
+// ```
+pub enum NdFault
+    // Two arrays had to agree exactly and did not.  `want` is the
+    // shape the operation was already committed to — the left operand,
+    // or the destination — and `got` is the one that did not fit.
+    NdShapeMismatch(want: [Int], got: [Int])
+    // Two shapes could not be broadcast against each other.  The rule
+    // they failed is written once, in `ndshape.broadcast`; this
+    // variant only reports the pair, because a reader who knows the
+    // rule needs the pair and a reader who does not needs the page.
+    NdNotBroadcastable(left: [Int], right: [Int])
+    // An axis number that is not an axis of this array.  Axes are
+    // 0-based and count from the outermost, so the legal range is
+    // `[0, rank)` and a negative axis is not accepted — numpy's
+    // negative-axis convention is a readability trap in a language
+    // whose lists do not index that way.
+    NdAxisOutOfRange(axis: Int, rank: Int)
+    // A full index that is off the array.  Both lists are here
+    // because either half can be the mistake: too few coordinates, or
+    // one coordinate too large.
+    NdIndexOutOfRange(index: [Int], dims: [Int])
+    // An index list of the wrong length for the array's rank.  Split
+    // out from `NdIndexOutOfRange` because the fix is different: this
+    // one is a coordinate the caller forgot to write, not a loop
+    // bound they got wrong.
+    NdRankMismatch(want: Int, got: Int)
+    // A reshape, or a construction from a list, whose element count
+    // does not match the shape it was given.  `want` is the product of
+    // the dims, `got` is the length of the buffer.
+    NdSizeMismatch(want: Int, got: Int)
+    // A reduction with no elements to reduce.  `sum` of nothing is
+    // 0.0 and needs no error; `mean`, `min`, `max`, `argmin` and
+    // `argmax` of nothing have no answer at all, and `what` names
+    // which one was asked.
+    NdEmptyReduction(what: Str)
+    // A matrix operation on something that is not a matrix.  `dot`
+    // wants two rank-1 arrays, `matmul` wants rank 1 or 2 on each
+    // side; anything else stops here rather than guessing an
+    // interpretation.
+    NdNotMatrix(what: Str, rank: Int)
+    // A construction whose arguments describe no array: a negative
+    // dimension, a `linspace` of fewer than two points, an `arange`
+    // whose step is zero or points away from its stop.
+    NdBadRange(what: Str)
+
+// The rule every `NdFault` is printed by: say what was compared, and
+// print both sides.
+//
+// `Result<T, E>` requires `E: Error` (SPEC § 3.4), so this impl is
+// what makes every fallible signature in the package spellable — it
+// exists whether or not an interface release has anything to say yet.
+impl Error for NdFault
+    fn message(self) -> Str
+        match self
+            NdShapeMismatch(want, got)      =>
+                "shapes must match: ${want} and ${got}"
+            NdNotBroadcastable(left, right) =>
+                "shapes ${left} and ${right} do not broadcast"
+            NdAxisOutOfRange(axis, rank)    =>
+                "axis ${axis} on an array of rank ${rank}"
+            NdIndexOutOfRange(index, dims)  =>
+                "index ${index} is off an array of shape ${dims}"
+            NdRankMismatch(want, got)       =>
+                "an index of ${want} coordinate(s), not ${got}"
+            NdSizeMismatch(want, got)       =>
+                "a shape of ${want} element(s) over a buffer of ${got}"
+            NdEmptyReduction(what)          =>
+                "${what} of an empty array has no value"
+            NdNotMatrix(what, rank)         =>
+                "${what} needs a matrix, not an array of rank ${rank}"
+            NdBadRange(what)                =>
+                "${what} describes no array"

@@ -1,0 +1,41 @@
+[package]
+name        = "ndarray-nv"
+version     = "0.0.1"
+description = "N-dimensional arrays of Float and of Int over a flat buffer, with a shape, strides and an offset: construction, reshape, transpose, slicing along an axis, broadcast arithmetic and comparison, reductions along an axis and over the whole array, and matrix multiply.  A view costs nothing because the buffer is a value, so a transpose never copies."
+
+license     = "Apache-2.0"
+
+# An INTERFACE release: every `pub fn` body is a `todo()`, so the
+# signatures and the effect rows are published and nothing is
+# implemented.  `novo pkg publish` recognises the shape and requires
+# both the draft stability and the 0.0.x version; the first
+# implementation is the 0.1.0 published over it.
+stability   = "draft"
+
+# `core`, and it costs nothing to stay there: an array is a list of
+# numbers, a shape is a list of integers, and every function here is
+# arithmetic over what the caller already holds.  Nothing is read,
+# nothing is written, no clock and no entropy is consulted.  The
+# package makes NO `@tier(embedded)` claim — see README, "The layer,
+# and why" — so the audit's `core-embedded` row passes and says so.
+layer       = "core"
+
+category    = "science"
+
+tags        = ["ndarray", "numpy", "array", "tensor", "numeric", "science"]
+repository  = "https://github.com/novolang/ndarray-nv"
+maintainers = ["novo-lang"]
+novo        = ">= 0.8.9"
+
+# A library: no `main`, so `novo pkg build` type-checks and
+# effect-checks every module under `src/` and writes no binary.
+
+[docs.pages]
+"README.md" = "N-dimensional arrays of Float and of Int"
+
+[dependencies]
+# None.  A shape is `[Int]`, a buffer is `[Float]` or `[Int]`, and the
+# arithmetic is the language's own.  `std.array`'s ArrayF64 is NOT the
+# buffer here: every one of its methods is `[io]` because it is a
+# handle over an FFI allocation, and a `core` package may not spend an
+# effect to read its own element.

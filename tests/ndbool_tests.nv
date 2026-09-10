@@ -1,0 +1,154 @@
+// ndbool_tests.nv — the API suite for the mask.
+//
+// RED ON PURPOSE: every body is a `todo()`, so each assertion reaches
+// `not implemented: ndarray-nv.ndbool.<fn>`.
+//
+// The two cases worth reading before the rest are the empty-mask
+// answers for `all` and `any`, which are the ones a reader is most
+// likely to disagree with, and the reasoning is in the doc comments.
+
+use std.test
+use ndbool
+use ndint
+use ndshape
+
+// [true, false, true], packed.
+fn three() -> NdMask
+    NdMask { data: [true, false, true], shape: NdShape { dims: [3], strides: [1] }, offset: 0 }
+
+// The 2-by-2 [[true, false], [false, true]], packed.
+fn mat22() -> NdMask
+    NdMask { data: [true, false, false, true],
+        shape: NdShape { dims: [2, 2], strides: [2, 1] },
+        offset: 0 }
+
+fn empty() -> NdMask
+    NdMask { data: [], shape: NdShape { dims: [0], strides: [1] }, offset: 0 }
+
+@test
+fn test_of_list_and_filled_build_a_shaped_mask() [io]
+    test.case("of_list keeps the shape")
+    match ndbool.of_list([true, false, true, true], [2, 2])
+        Ok(m)  =>
+            test.assert(ndbool.shape(m).dims == [2, 2])
+            test.assert(ndbool.size(m) == 4)
+            test.assert(ndbool.count(m) == 3)
+        Err(e) => test.fail("four truths in a 2-by-2 failed: ${e.message()}")
+
+    test.case("a count that does not match the shape is refused")
+    match ndbool.of_list([true, false], [2, 2])
+        Ok(_)  => test.fail("two truths were accepted as a 2-by-2")
+        Err(_) => test.assert(true)
+
+    test.case("filled sets every position the same way")
+    match ndbool.filled([2, 3], true)
+        Ok(m)  =>
+            test.assert(ndbool.size(m) == 6)
+            test.assert(ndbool.count(m) == 6)
+        Err(e) => test.fail("filled failed: ${e.message()}")
+
+@test
+fn test_at_and_to_list_read_positions() [io]
+    test.case("at takes one coordinate per axis")
+    match ndbool.at(three(), [1])
+        Ok(v)  => test.assert(v == false)
+        Err(e) => test.fail("a legal index failed: ${e.message()}")
+
+    test.case("a coordinate off the end is refused")
+    match ndbool.at(three(), [3])
+        Ok(_)  => test.fail("position 3 of a 3-position mask answered")
+        Err(_) => test.assert(true)
+
+    test.case("to_list is row-major and walks a view's strides")
+    test.assert(ndbool.to_list(three()) == [true, false, true])
+    match ndbool.swap_axes(mat22(), 0, 1)
+        Ok(t)  => test.assert(ndbool.to_list(t) == [true, false, false, true])
+        Err(e) => test.fail("a legal swap failed: ${e.message()}")
+
+@test
+fn test_all_any_and_count_over_an_empty_mask() [io]
+    test.case("a mask with a false in it is not all")
+    test.assert(ndbool.all(three()) == false)
+    test.assert(ndbool.any(three()))
+    test.assert(ndbool.count(three()) == 2)
+
+    test.case("all of nothing is true — the empty conjunction")
+    test.assert(ndbool.all(empty()))
+
+    test.case("any of nothing is false — the empty disjunction")
+    test.assert(ndbool.any(empty()) == false)
+
+    test.case("count of nothing is zero")
+    test.assert(ndbool.count(empty()) == 0)
+
+@test
+fn test_count_axis_answers_with_integers_of_one_lower_rank() [io]
+    test.case("counting along axis 1 of a 2-by-2 gives one count per row")
+    match ndbool.count_axis(mat22(), 1)
+        Ok(c)  =>
+            test.assert(ndint.rank(c) == 1)
+            test.assert(ndint.to_list(c) == [1, 1])
+        Err(e) => test.fail("count_axis failed: ${e.message()}")
+
+    test.case("an axis this mask does not have is refused")
+    match ndbool.count_axis(three(), 2)
+        Ok(_)  => test.fail("axis 2 of a rank-1 mask was counted")
+        Err(_) => test.assert(true)
+
+@test
+fn test_both_either_and_invert() [io]
+    test.case("both is the conjunction — `and` is a reserved word")
+    match ndbool.both(three(), three())
+        Ok(r)  => test.assert(ndbool.count(r) == 2)
+        Err(e) => test.fail("both failed: ${e.message()}")
+
+    test.case("either is the disjunction")
+    match ndbool.either(three(), ndbool.invert(three()))
+        Ok(r)  => test.assert(ndbool.all(r))
+        Err(e) => test.fail("either failed: ${e.message()}")
+
+    test.case("invert flips every position")
+    test.assert(ndbool.to_list(ndbool.invert(three())) == [false, true, false])
+
+    test.case("invert twice is the mask back")
+    test.assert(ndbool.to_list(ndbool.invert(ndbool.invert(three()))) == [true, false, true])
+
+    test.case("shapes that do not broadcast stop the call")
+    match ndbool.both(three(), mat22())
+        Ok(_)  => test.fail("a [3] and a [2, 2] mask claimed to combine")
+        Err(_) => test.assert(true)
+
+@test
+fn test_swap_axes_and_pack() [io]
+    test.case("swap_axes exchanges two axes")
+    match ndbool.swap_axes(mat22(), 0, 1)
+        Ok(t)  => test.assert(ndbool.shape(t).dims == [2, 2])
+        Err(e) => test.fail("a legal swap failed: ${e.message()}")
+
+    test.case("an axis that is not there is refused")
+    match ndbool.swap_axes(three(), 0, 1)
+        Ok(_)  => test.fail("axis 1 of a rank-1 mask was swapped")
+        Err(_) => test.assert(true)
+
+    test.case("pack materialises into an exactly-sized buffer")
+    let p = ndbool.pack(three())
+    test.assert(list.len(p.data) == 3)
+    test.assert(ndshape.is_packed(ndbool.shape(p)))
+
+@test
+fn test_to_int_and_of_int_are_the_only_place_the_two_meet() [io]
+    test.case("true is 1 and false is 0")
+    test.assert(ndint.to_list(ndbool.to_int(three())) == [1, 0, 1])
+
+    test.case("the shape survives the conversion")
+    test.assert(ndint.shape(ndbool.to_int(mat22())).dims == [2, 2])
+
+    test.case("non-zero is true, and the round trip is the mask back")
+    match ndint.of_list([1, 0, 2], [3])
+        Ok(a)  =>
+            test.assert(ndbool.count(ndbool.of_int(a)) == 2)
+            test.assert(ndbool.to_list(ndbool.of_int(a)) == [true, false, true])
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("to_int then of_int is the identity on a mask")
+    test.assert(ndbool.to_list(ndbool.of_int(ndbool.to_int(three()))) == [true, false, true])

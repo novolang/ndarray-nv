@@ -1,0 +1,309 @@
+// ndbool.nv — the array a comparison produces, and the four things
+// worth asking it.
+//
+// WHY A COMPARISON DOES NOT RETURN A `[Bool]`.  `a > 0` on a 3-by-4
+// matrix is a 3-by-4 answer, and flattening it to twelve bools throws
+// away the only thing that makes the next call — a selection, a
+// count along an axis, a `where` — expressible.  So a mask carries a
+// shape like every other array here, and it is a view over its buffer
+// on exactly the same terms: `ndbool.transpose` of a mask is free.
+//
+// WHY IT IS A SEPARATE TYPE AND NOT `NdInt` OF 0s AND 1s.  Because the
+// type is the documentation.  A function that takes an `NdMask` cannot
+// be handed a column of counts by accident, and `select` and `where`
+// in `ndfloat` say what they need in their signatures rather than in
+// their prose.  The cost is `to_int` and `of_int` below, which is two
+// functions, and they are the only place the two representations meet.
+//
+// WHERE THE REST OF A MASK'S LIFE HAPPENS.  The comparisons that
+// PRODUCE a mask are in `ndfloat` and `ndint`, beside the arrays they
+// compare, and the selections that CONSUME one — `select`, `where` —
+// are there too.  What is here is everything a mask can answer on its
+// own.  `count_axis`, `to_int` and `of_int` name `NdInt`, so this
+// module and `ndint` refer to each other; the compiler resolves a
+// module pair that way without ceremony, and it is worth saying
+// because it is the reason a mask does not have to be an `NdInt` of
+// 0s and 1s to avoid a cycle.
+
+// A shaped array of truths, as a comparison leaves it.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false, true, true], [2, 2])
+//         Ok(m)  => println("${ndbool.count(m)} of ${ndbool.size(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub struct NdMask
+    // The flat buffer.  Its length is not the array's size: a view
+    // addresses a window inside it, and a broadcast axis reads one
+    // element many times.
+    data: [Bool]
+    // Where in `data` this array's element `[0, 0, …]` sits, and how
+    // to step from there.
+    shape: NdShape
+    // The flat position of the first element.
+    offset: Int
+
+// A mask over these truths, in this shape, row-major.
+//
+// `NdSizeMismatch` when the product of `dims` is not the length of
+// `data`, and `NdBadRange` for a negative dimension.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false], [2])
+//         Ok(m)  => println("${ndbool.size(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn of_list(data: [Bool], dims: [Int]) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndbool.of_list")
+
+// A mask of this shape with every position set the same way.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([2, 3], true)
+//         Ok(m)  => println("${ndbool.count(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn filled(dims: [Int], value: Bool) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndbool.filled")
+
+// This mask's layout.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([2, 3], true)
+//         Ok(m)  => println("${ndbool.shape(m).dims}")
+//         Err(e) => println(e.message())
+// ```
+pub fn shape(m: NdMask) -> NdShape
+    todo("ndarray-nv.ndbool.shape")
+
+// How many positions this mask has, true and false together.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([2, 3], false)
+//         Ok(m)  => println("${ndbool.size(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn size(m: NdMask) -> Int
+    todo("ndarray-nv.ndbool.size")
+
+// The truth at one full index.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false], [2])
+//         Ok(m)  =>
+//             match ndbool.at(m, [1])
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn at(m: NdMask, index: [Int]) -> Result<Bool, NdFault>
+    todo("ndarray-nv.ndbool.at")
+
+// Every truth in row-major order, view or not.
+//
+// This is the function that walks the strides, so it is correct for a
+// transposed or broadcast mask and costs one element's work per
+// element.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([3], true)
+//         Ok(m)  => println("${ndbool.to_list(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn to_list(m: NdMask) -> [Bool]
+    todo("ndarray-nv.ndbool.to_list")
+
+// Whether every position is true.
+//
+// An empty mask is `true` — the empty conjunction — which is numpy's
+// answer and the one that keeps `all(a) and all(b)` equal to
+// `all(concat(a, b))`.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, true], [2])
+//         Ok(m)  => println("${ndbool.all(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn all(m: NdMask) -> Bool
+    todo("ndarray-nv.ndbool.all")
+
+// Whether any position is true.
+//
+// An empty mask is `false`, for the mirror of the reason above.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([false, true], [2])
+//         Ok(m)  => println("${ndbool.any(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn any(m: NdMask) -> Bool
+    todo("ndarray-nv.ndbool.any")
+
+// How many positions are true.
+//
+// The one a notebook asks first, because `count(a > 0)` is how many
+// rows survived.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false, true], [3])
+//         Ok(m)  => println("${ndbool.count(m)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn count(m: NdMask) -> Int
+    todo("ndarray-nv.ndbool.count")
+
+// How many positions are true along one axis, as an `NdInt` of one
+// lower rank.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([2, 3], true)
+//         Ok(m)  =>
+//             match ndbool.count_axis(m, 1)
+//                 Ok(c)  => println("${ndint.to_list(c)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn count_axis(m: NdMask, axis: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndbool.count_axis")
+
+// Position-by-position conjunction, broadcasting.  Named `both`
+// because `and` is a reserved word (SPEC § 1.3).
+//
+// The rule is `ndshape.broadcast`.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false], [2])
+//         Ok(m)  =>
+//             match ndbool.both(m, m)
+//                 Ok(r)  => println("${ndbool.count(r)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn both(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndbool.both")
+
+// Position-by-position disjunction, broadcasting by
+// `ndshape.broadcast`.  Named `either` because `or` is reserved.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false], [2])
+//         Ok(m)  =>
+//             match ndbool.either(m, m)
+//                 Ok(r)  => println("${ndbool.count(r)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn either(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndbool.either")
+
+// Position-by-position negation, into a fresh packed buffer: there is
+// no stride that means "negated".  Named `invert` because `not` is
+// reserved.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false], [2])
+//         Ok(m)  => println("${ndbool.count(ndbool.invert(m))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn invert(m: NdMask) -> NdMask
+    todo("ndarray-nv.ndbool.invert")
+
+// The mask with two axes exchanged — free, like every other view.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([2, 3], true)
+//         Ok(m)  =>
+//             match ndbool.swap_axes(m, 0, 1)
+//                 Ok(t)  => println("${ndbool.shape(t).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn swap_axes(m: NdMask, first: Int, second: Int) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndbool.swap_axes")
+
+// The same mask over a fresh, contiguous, exactly-sized buffer.
+//
+// The one function here whose purpose is to copy — see `ndshape`'s
+// module comment on what a view keeps alive.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.filled([2, 3], true)
+//         Ok(m)  => println("${ndbool.size(ndbool.pack(m))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn pack(m: NdMask) -> NdMask
+    todo("ndarray-nv.ndbool.pack")
+
+// The mask as 1s and 0s, so it can be summed, grouped or joined.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndbool.of_list([true, false, true], [3])
+//         Ok(m)  => println("${ndint.to_list(ndbool.to_int(m))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn to_int(m: NdMask) -> NdInt
+    todo("ndarray-nv.ndbool.to_int")
+
+// Non-zero is true, zero is false — the inverse of `to_int`.
+//
+// ```novo
+// use ndbool
+//
+// fn main() [io]
+//     match ndint.of_list([1, 0, 2], [3])
+//         Ok(a)  => println("${ndbool.count(ndbool.of_int(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn of_int(a: NdInt) -> NdMask
+    todo("ndarray-nv.ndbool.of_int")

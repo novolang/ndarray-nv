@@ -1,0 +1,787 @@
+// ndint.nv — the N-dimensional array of Int: counts, positions,
+// labels and indices.
+//
+// WHY THIS IS A SEPARATE TYPE AND NOT `NdFloat` WITH A DTYPE TAG.  Two
+// reasons, and the first is the one that decided it.  A dtype tag
+// makes every function in the package branch on it, which turns one
+// `sum` into a `sum` with two bodies and a third case for the
+// combination nobody meant; and an Int that has been through a double
+// is not the Int that went in above 2^53, which is exactly the range a
+// row count reaches in the data a notebook loads.  Positions and
+// counts are integers, and they stay integers here.
+//
+// WHY IT IS NOT ONE GENERIC `NdArray<T>` INSTEAD.  Because a generic
+// container cannot be called across a module boundary today.  The
+// measurement is in `ndfloat`'s module comment and the argument is in
+// the README; the surface below deliberately MIRRORS `ndfloat`'s,
+// member for member and name for name, so that the day the compiler
+// can carry a type parameter out of a module the two collapse into one
+// by deletion.
+//
+// WHAT IS DELIBERATELY MISSING, AND WHERE IT WENT.  There is no
+// `mean`, no `sqrt`, no `exp`, no `ln` and no `linspace` here: every
+// one of them answers with a number that is not an integer, and
+// rounding it silently is worse than making the caller write
+// `to_float` and mean it.  `ndint.to_float` is that call.
+//
+// EVERYTHING ELSE IS `ndfloat`'S STORY.  Views, broadcasting, the
+// absence of an in-place write, the absence of an `add_scalar`: all
+// four hold here for the same reasons and are argued there and in
+// `ndshape`.
+
+// An N-dimensional array of Int over a flat buffer.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4], [2, 2])
+//         Ok(a)  => println("${ndint.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub struct NdInt
+    // The flat buffer.  Its length is not the array's size: a view
+    // addresses a window inside it, and a broadcast axis reads one
+    // element many times.
+    data: [Int]
+    // The extents and the strides — see `ndshape`.
+    shape: NdShape
+    // The flat position of element `[0, 0, …]`.
+    offset: Int
+
+// An array over these integers, in this shape, row-major.
+//
+// `NdSizeMismatch` when the product of `dims` is not the length of
+// `data`, and `NdBadRange` for a negative dimension.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3], [3])
+//         Ok(a)  => println("${ndint.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn of_list(data: [Int], dims: [Int]) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.of_list")
+
+// The rank-0 array holding one integer, which broadcasts against every
+// shape.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     println("${ndint.sum(ndint.scalar(3))}")
+// ```
+pub fn scalar(value: Int) -> NdInt
+    todo("ndarray-nv.ndint.scalar")
+
+// An array of this shape, every element 0.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 3])
+//         Ok(a)  => println("${ndint.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn zeros(dims: [Int]) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.zeros")
+
+// An array of this shape, every element 1.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.ones([2, 3])
+//         Ok(a)  => println("${ndint.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn ones(dims: [Int]) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.ones")
+
+// An array of this shape, every element the same integer.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.filled([2, 2], 7)
+//         Ok(a)  => println("${ndint.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn filled(dims: [Int], value: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.filled")
+
+// The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
+//
+// Half-open, and `NdBadRange` for a zero step or one that points away
+// from `stop` — the same rule as `ndfloat.arange`, which is where it
+// is argued.  This is the one a loop over row numbers wants.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.arange(0, 5, 1)
+//         Ok(a)  => println("${ndint.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.arange")
+
+// This array's layout.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 3])
+//         Ok(a)  => println("${ndint.shape(a).dims}")
+//         Err(e) => println(e.message())
+// ```
+pub fn shape(a: NdInt) -> NdShape
+    todo("ndarray-nv.ndint.shape")
+
+// How many axes this array has.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 3])
+//         Ok(a)  => println("${ndint.rank(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn rank(a: NdInt) -> Int
+    todo("ndarray-nv.ndint.rank")
+
+// How many elements this array has.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 3])
+//         Ok(a)  => println("${ndint.size(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn size(a: NdInt) -> Int
+    todo("ndarray-nv.ndint.size")
+
+// The integer at one full index.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4], [2, 2])
+//         Ok(a)  =>
+//             match ndint.at(a, [1, 0])
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn at(a: NdInt, index: [Int]) -> Result<Int, NdFault>
+    todo("ndarray-nv.ndint.at")
+
+// The same array with one element changed — a new array, not a write.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 2])
+//         Ok(a)  =>
+//             match ndint.with(a, [0, 1], 5)
+//                 Ok(b)  => println("${ndint.sum(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.with")
+
+// Every element in row-major order, view or not.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2], [2])
+//         Ok(a)  => println("${ndint.to_list(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn to_list(a: NdInt) -> [Int]
+    todo("ndarray-nv.ndint.to_list")
+
+// The same elements under a different shape — a view when the array is
+// packed, a copy when it is not.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4], [4])
+//         Ok(a)  =>
+//             match ndint.reshape(a, [2, 2])
+//                 Ok(b)  => println("${ndint.shape(b).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn reshape(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.reshape")
+
+// Every axis reversed.  A view; it does not copy.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+//         Ok(a)  => println("${ndint.shape(ndint.transpose(a)).dims}")
+//         Err(e) => println(e.message())
+// ```
+pub fn transpose(a: NdInt) -> NdInt
+    todo("ndarray-nv.ndint.transpose")
+
+// Two axes exchanged.  A view; it does not copy.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 3, 4])
+//         Ok(a)  =>
+//             match ndint.swap_axes(a, 0, 2)
+//                 Ok(b)  => println("${ndint.shape(b).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn swap_axes(a: NdInt, first: Int, second: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.swap_axes")
+
+// The positions `[start, stop)` along one axis, every other axis
+// whole.  A view; rank is unchanged.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([4, 3])
+//         Ok(a)  =>
+//             match ndint.slice_axis(a, 0, 1, 3)
+//                 Ok(b)  => println("${ndint.shape(b).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn slice_axis(a: NdInt, axis: Int, start: Int, stop: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.slice_axis")
+
+// One position along one axis, with that axis DROPPED.  A view.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([4, 3])
+//         Ok(a)  =>
+//             match ndint.index_axis(a, 0, 2)
+//                 Ok(r)  => println("${ndint.shape(r).dims}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn index_axis(a: NdInt, axis: Int, at: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.index_axis")
+
+// The array stretched to a shape it broadcasts to, by
+// `ndshape.broadcast`.  A view.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3], [3])
+//         Ok(a)  =>
+//             match ndint.broadcast_to(a, [2, 3])
+//                 Ok(b)  => println("${ndint.size(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn broadcast_to(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.broadcast_to")
+
+// The same array over a fresh, contiguous, exactly-sized buffer.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.zeros([2, 3])
+//         Ok(a)  => println("${ndint.size(ndint.pack(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn pack(a: NdInt) -> NdInt
+    todo("ndarray-nv.ndint.pack")
+
+// Element-by-element sum, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2], [2])
+//         Ok(a)  =>
+//             match ndint.add(a, ndint.scalar(10))
+//                 Ok(b)  => println("${ndint.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn add(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.add")
+
+// Element-by-element difference, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.ones([3])
+//         Ok(a)  =>
+//             match ndint.sub(a, a)
+//                 Ok(b)  => println("${ndint.sum(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn sub(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.sub")
+
+// Element-by-element product, broadcasting by `ndshape.broadcast`.
+// NOT the matrix product — that is `matmul`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3], [3])
+//         Ok(a)  =>
+//             match ndint.mul(a, a)
+//                 Ok(b)  => println("${ndint.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn mul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.mul")
+
+// Element-by-element quotient, TRUNCATED towards zero, broadcasting by
+// `ndshape.broadcast`.
+//
+// `NdBadRange` when any divisor is 0, which is the opposite of
+// `ndfloat.div`'s call and for the opposite reason: integer division
+// has no infinity to return, so there is no value that would let the
+// run finish honestly.  Truncation rather than flooring means
+// `div(scalar(-7), scalar(2))` is -3, matching the language's own `/`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([4, 9], [2])
+//         Ok(a)  =>
+//             match ndint.div(a, ndint.scalar(2))
+//                 Ok(b)  => println("${ndint.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn div(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.div")
+
+// Element-by-element remainder, with the sign of the DIVIDEND, on the
+// same zero-divisor terms as `div`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([7, 8], [2])
+//         Ok(a)  =>
+//             match ndint.rem(a, ndint.scalar(3))
+//                 Ok(b)  => println("${ndint.to_list(b)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn rem(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.rem")
+
+// Every element negated.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.ones([3])
+//         Ok(a)  => println("${ndint.sum(ndint.neg(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn neg(a: NdInt) -> NdInt
+    todo("ndarray-nv.ndint.neg")
+
+// Every element's magnitude.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([-1, 2], [2])
+//         Ok(a)  => println("${ndint.sum(ndint.abs(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn abs(a: NdInt) -> NdInt
+    todo("ndarray-nv.ndint.abs")
+
+// Every element through a function of the caller's.
+//
+// ```novo
+// use ndint
+//
+// fn double(x: Int) -> Int
+//     x * 2
+//
+// fn main() [io]
+//     match ndint.ones([4])
+//         Ok(a)  => println("${ndint.sum(ndint.map(a, double))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn map(a: NdInt, f: fn(Int) -> Int) -> NdInt
+    todo("ndarray-nv.ndint.map")
+
+// Where two arrays are equal, broadcasting by `ndshape.broadcast`.
+//
+// Exact, and with no NaN to worry about — which is one more reason a
+// label or a key belongs in an `NdInt` rather than an `NdFloat`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.ones([3])
+//         Ok(a)  =>
+//             match ndint.eq(a, a)
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn eq(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndint.eq")
+
+// Where two arrays differ, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.ones([3])
+//         Ok(a)  =>
+//             match ndint.ne(a, ndint.scalar(0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn ne(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndint.ne")
+
+// Where `left` is below `right`, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 5], [2])
+//         Ok(a)  =>
+//             match ndint.lt(a, ndint.scalar(3))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn lt(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndint.lt")
+
+// Where `left` is at most `right`, broadcasting by
+// `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 5], [2])
+//         Ok(a)  =>
+//             match ndint.le(a, ndint.scalar(1))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn le(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndint.le")
+
+// Where `left` is above `right`, broadcasting by `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([-1, 5], [2])
+//         Ok(a)  =>
+//             match ndint.gt(a, ndint.scalar(0))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn gt(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndint.gt")
+
+// Where `left` is at least `right`, broadcasting by
+// `ndshape.broadcast`.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([-1, 5], [2])
+//         Ok(a)  =>
+//             match ndint.ge(a, ndint.scalar(5))
+//                 Ok(m)  => println("${ndbool.count(m)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn ge(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
+    todo("ndarray-nv.ndint.ge")
+
+// The elements the mask picks, as a rank-1 array in row-major order.
+//
+// The mask must have the array's shape exactly; see
+// `ndfloat.select` for why a selection does not broadcast.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([-1, 5], [2])
+//         Ok(a)  =>
+//             match ndint.gt(a, ndint.scalar(0))
+//                 Ok(m)  =>
+//                     match ndint.select(a, m)
+//                         Ok(p)  => println("${ndint.to_list(p)}")
+//                         Err(e) => println(e.message())
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn select(a: NdInt, keep: NdMask) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.select")
+
+// The elements at these positions along one axis, in the order given.
+//
+// The gather a group-by and a join are built out of: `take(rows, 0,
+// order)` reorders an array's rows without sorting anything itself.
+// Positions may repeat and may be in any order; each one must be
+// inside the axis, or `NdIndexOutOfRange`.  The result is packed,
+// because a gather is not expressible as strides.
+//
+// It is here rather than in `ndfloat` as well because the positions
+// themselves are integers, and this is the module that owns them —
+// `ndfloat.take_rows` would be the mirror, and the day the two arrays
+// are one type it is one function.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([10, 20, 30], [3])
+//         Ok(a)  =>
+//             match ndint.take(a, 0, [2, 0, 2])
+//                 Ok(t)  => println("${ndint.to_list(t)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn take(a: NdInt, axis: Int, positions: [Int]) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.take")
+
+// Every element added up.  The sum of nothing is 0.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3], [3])
+//         Ok(a)  => println("${ndint.sum(a)}")
+//         Err(e) => println(e.message())
+// ```
+pub fn sum(a: NdInt) -> Int
+    todo("ndarray-nv.ndint.sum")
+
+// The smallest element.  `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([3, 1], [2])
+//         Ok(a)  =>
+//             match ndint.min(a)
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn min(a: NdInt) -> Result<Int, NdFault>
+    todo("ndarray-nv.ndint.min")
+
+// The largest element.  `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([3, 1], [2])
+//         Ok(a)  =>
+//             match ndint.max(a)
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn max(a: NdInt) -> Result<Int, NdFault>
+    todo("ndarray-nv.ndint.max")
+
+// The full index of the smallest element; the FIRST one on a tie.
+// `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([3, 1, 2], [3])
+//         Ok(a)  =>
+//             match ndint.argmin(a)
+//                 Ok(i)  => println("${i}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn argmin(a: NdInt) -> Result<[Int], NdFault>
+    todo("ndarray-nv.ndint.argmin")
+
+// The full index of the largest element; the FIRST one on a tie.
+// `NdEmptyReduction` on an empty array.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([3, 1, 2], [3])
+//         Ok(a)  =>
+//             match ndint.argmax(a)
+//                 Ok(i)  => println("${i}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn argmax(a: NdInt) -> Result<[Int], NdFault>
+    todo("ndarray-nv.ndint.argmax")
+
+// Sums along one axis, which is dropped.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4], [2, 2])
+//         Ok(a)  =>
+//             match ndint.sum_axis(a, 0)
+//                 Ok(s)  => println("${ndint.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn sum_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.sum_axis")
+
+// Smallest elements along one axis, which is dropped.
+// `NdEmptyReduction` when that axis has extent 0.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4], [2, 2])
+//         Ok(a)  =>
+//             match ndint.min_axis(a, 0)
+//                 Ok(s)  => println("${ndint.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn min_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.min_axis")
+
+// Largest elements along one axis, which is dropped.
+// `NdEmptyReduction` when that axis has extent 0.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3, 4], [2, 2])
+//         Ok(a)  =>
+//             match ndint.max_axis(a, 0)
+//                 Ok(s)  => println("${ndint.to_list(s)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn max_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.max_axis")
+
+// The inner product of two rank-1 arrays.  `NdNotMatrix` at any other
+// rank.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3], [3])
+//         Ok(a)  =>
+//             match ndint.dot(a, a)
+//                 Ok(v)  => println("${v}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn dot(left: NdInt, right: NdInt) -> Result<Int, NdFault>
+    todo("ndarray-nv.ndint.dot")
+
+// The matrix product, on `ndfloat.matmul`'s rank rules.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 0, 0, 1], [2, 2])
+//         Ok(i)  =>
+//             match ndint.matmul(i, i)
+//                 Ok(p)  => println("${ndint.sum(p)}")
+//                 Err(e) => println(e.message())
+//         Err(e) => println(e.message())
+// ```
+pub fn matmul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
+    todo("ndarray-nv.ndint.matmul")
+
+// Every element widened to a Float.
+//
+// Exact below 2^53 and rounded above it, which is the language's own
+// conversion and is why `mean` lives on the other side of this call
+// rather than on this one.
+//
+// ```novo
+// use ndint
+//
+// fn main() [io]
+//     match ndint.of_list([1, 2, 3], [3])
+//         Ok(a)  => println("${ndfloat.sum(ndint.to_float(a))}")
+//         Err(e) => println(e.message())
+// ```
+pub fn to_float(a: NdInt) -> NdFloat
+    todo("ndarray-nv.ndint.to_float")
