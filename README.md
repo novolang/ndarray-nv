@@ -211,12 +211,12 @@ the dims and strides off one it has.
   entropy. [stats-nv](https://novo-lang.org/packages/stats-nv) takes
   random draws as an argument instead.
 - **In-place mutation, and an iterator over elements.** See rule 5.
-- **A microcontroller build.** Every operation here allocates a fresh
-  buffer. Adding two arrays of a thousand elements allocates a
-  thousand-element list. A device with no heap allocator needs a
-  fixed-size buffer the caller supplies, which is a different interface
-  rather than a flag on this one. This package makes no device claim and
-  ships no device probe.
+- **A microcontroller build.** Every operation here allocates a fresh buffer.
+  Adding two arrays of a thousand elements allocates a thousand-element list.
+  A device with no heap allocator needs a fixed-size buffer the caller
+  supplies, which is a different interface rather than a flag on this one.
+  Nothing here is claimed to build for a device with no heap allocator, and
+  there is no `tests/embedded_probe.nv`.
 
 ## Related packages
 
