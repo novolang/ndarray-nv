@@ -194,13 +194,12 @@ the dims and strides off one it has.
   complex data as an interleaved buffer of real and imaginary parts
   instead.
 - **32-bit float arrays.** The buffer here is `Float`, which is 64-bit.
-- **One generic array type over an element type parameter.** A generic
-  function over a generic struct cannot be called from another module on
-  the toolchain this interface is written against. Three separate
-  compiler faults are filed for it. A library is a module boundary, so a
-  generic array would be a type no caller outside this package could
-  use. `NdFloat` and `NdInt` carry the same members in the same order, so
-  they can become one type by deletion when that is fixed.
+- **One generic array type over an element type parameter.** This
+  release publishes two concrete arrays instead. `NdFloat` and `NdInt`
+  carry the same members, in the same order, under the same names, so a
+  later release can merge them into one type without moving any
+  argument. The four places they differ are in "How to choose an entry
+  point".
 - **Sorting.** `ndint.take` is the gather that a sort's output feeds.
 - **`einsum`**, the index-notation contraction.
 - **Matrix decompositions.** LU, QR, Cholesky, the eigendecomposition and
