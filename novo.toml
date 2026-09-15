@@ -1,6 +1,6 @@
 [package]
 name        = "ndarray-nv"
-version     = "0.0.1"
+version     = "0.0.2"
 description = "N-dimensional arrays of Float and of Int over a flat buffer, with a shape, strides and an offset: construction, reshape, transpose, slicing along an axis, broadcast arithmetic and comparison, reductions along an axis and over the whole array, and matrix multiply.  A view costs nothing because the buffer is a value, so a transpose never copies."
 
 license     = "Apache-2.0"

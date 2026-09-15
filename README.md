@@ -1,223 +1,300 @@
 # ndarray-nv
 
-**Status: NOT IMPLEMENTED — interface only.**
+An N-dimensional array is a block of numbers of one type, addressed by a
+list of coordinates. A one-dimensional array is a vector, a
+two-dimensional one is a matrix, and the number of coordinates is called
+the array's rank. This package brings that data structure, and the
+operations a notebook performs on one, to novo-lang. Its reference is
+[NumPy](https://numpy.org/doc/stable/reference/index.html) for what each
+operation means, and the Rust crate
+[ndarray](https://docs.rs/ndarray) for the layout that makes a transpose
+free.
 
-Every public function below is published with its signature and its
-effect row, and every body is `todo()`.  Installing this package works;
-calling it panics with `not implemented`.
+Four other packages on the registry are defined over these arrays:
+[linalg-nv](https://novo-lang.org/packages/linalg-nv) (matrix
+decompositions), [stats-nv](https://novo-lang.org/packages/stats-nv)
+(summaries, distributions and hypothesis tests),
+[fft-nv](https://novo-lang.org/packages/fft-nv) (two-dimensional Fourier
+transforms) and
+[dataframe-nv](https://novo-lang.org/packages/dataframe-nv), whose
+numeric columns convert to and from them.
 
-## What this is
+**Status: NOT IMPLEMENTED — interface only.** Every function is declared
+with its full signature, but every body is a `todo()` that panics when
+called. The package is published so its design can be reviewed and
+depended on before it is implemented. Version 0.1.0 will be the first
+working release.
 
-N-dimensional arrays for novo-lang: a flat buffer, a shape, strides and
-an offset, plus the operations a notebook actually performs on one —
-construction, reshape, transpose, slicing along an axis, broadcast
-arithmetic and comparison, reductions along an axis and over the whole
-array, and matrix multiply.
+## What an N-dimensional array is here
 
-It is the numeric floor of the novobook tier.  dataframe-nv's numeric
-columns are these arrays; stats-nv's summaries, distributions and tests
-take them as input.  The subset here is the one measured off notebook
-corpora rather than the whole of numpy: `arange`, `linspace`, `eye`,
-`reshape`, `transpose`, a slice, `+ - * /`, a comparison, `sum`, `mean`,
-`min`, `max`, `argmin`, `argmax` along an axis, `dot` and `matmul`.  What
-is deliberately absent is in "What is not here" below.
+An array is three things: a flat buffer of numbers, a **shape**, and an
+**offset**. The shape is two lists of integers. **Dims** gives the extent
+along each axis, outermost first, so a 3-by-4 matrix has dims `[3, 4]`.
+**Strides** gives how far to step in the flat buffer to move one place
+along that axis. The offset says where in the buffer the array's first
+element sits. Element `[i, j, k]` of an array with offset `o` lives at
+`o + i*strides[0] + j*strides[1] + k*strides[2]`, and that line is the
+whole layout.
+
+A **view** is a new shape over a buffer that already exists. Because a
+view copies nothing, transposing a million-element matrix costs a list of
+two integers reversed. NumPy's views alias memory that another holder can
+write through, so a NumPy user has to know which operations view and
+which copy. That hazard does not exist here. A novo-lang list is a value,
+and no function in this package writes into an array in place, so there
+is no writer for a view to expose.
+
+**Broadcasting** is the rule that lets two arrays of different shapes
+take part in one arithmetic operation. The shapes are lined up from the
+right. An axis of extent 1 is stretched to meet the other array's extent.
+Any other disagreement is refused. NumPy's
+[broadcasting rules](https://numpy.org/doc/stable/user/basics.broadcasting.html)
+are the rule this package follows.
+
+A **rank-0 array** is an array with no axes at all: a single number with
+an empty dims list. It broadcasts against every shape. That is why the
+arithmetic here always takes two arrays, and why there is no
+`add_scalar` beside `add`.
+
+A **mask** is an array of truths with a shape, which is what a comparison
+answers. Comparing a 3-by-4 matrix against a number gives a 3-by-4 mask,
+not a flat list of twelve truths.
+
+The package publishes two array types, `NdFloat` over `Float` and `NdInt`
+over `Int`, rather than one array with a type parameter. See "How to
+choose an entry point" for which to reach for, and "What is not
+included" for why there is only one element type each.
+
+## Install
 
 ```
 novo pkg add ndarray-nv
-novo pkg build
-novo test --isolate
 ```
 
-Every call panics with `not implemented` until the implementation lands,
-so `novo test --isolate` is what a first-time reader runs: each `@test`
-gets its own process and prints the function it stopped at.
-
-## The one example that will work
+## Example
 
 ```novo
 use ndfloat
 use ndbool
 
 fn main() [io]
-    // Twenty measurements, and the ones above the mean.
-    match ndfloat.linspace(0.0, 19.0, 20)
-        Ok(xs) =>
-            match ndfloat.mean(xs)
-                Ok(m) =>
-                    match ndfloat.gt(xs, ndfloat.scalar(m))
-                        Ok(above) => println("${ndbool.count(above)} of ${ndfloat.size(xs)} are above ${m}")
-                        Err(e)    => println(e.message())
-                Err(e) => println(e.message())
+    // Six values laid out as a 2-by-3 matrix, one row after the other.
+    match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
         Err(e) => println(e.message())
+        Ok(a) =>
+            // A transpose is a new shape over the same buffer, so nothing is copied.
+            let t = ndfloat.transpose(a)
+            println("the 3-by-2 transpose sums to ${ndfloat.sum(t)}")
+
+            // `scalar` is a rank-0 array, and a rank-0 array broadcasts
+            // against every shape, so this adds 10 to every element.
+            match ndfloat.add(t, ndfloat.scalar(10.0))
+                Err(e) => println(e.message())
+                Ok(b)  => println("with 10 added to each, ${ndfloat.sum(b)}")
+
+            // A comparison answers a mask of the same shape, not a flat list.
+            match ndfloat.gt(a, ndfloat.scalar(3.0))
+                Err(e) => println(e.message())
+                Ok(m)  => println("${ndbool.count(m)} elements are above 3.0")
 ```
 
-## The layer, and why
+Build and test with `novo pkg build` and `novo test`. Today `novo test`
+fails on purpose: every test reaches a
+`not implemented: ndarray-nv.<module>.<fn>` panic. The tests are the
+specification the implementation will have to satisfy.
 
-`core`.  An array is a list of numbers, a shape is two lists of
-integers, and every function here is arithmetic over what the caller
-already holds.  Nothing is read, nothing is written, no clock and no
-entropy is consulted, and no function takes a stream — so the sans-IO
-question that shapes most `core` packages does not arise here at all.
-The whole surface is `[]`, and there are no `host_modules`.
+`novo test --isolate` gives each test its own process, so the output
+names the function each one stopped at.
 
-**No `@tier(embedded)` claim.**  A core package's device claim is built,
-not asserted, so making one means shipping `tests/embedded_probe.nv` and
-having the audit build it for a microcontroller.  This package does not
-make it, and the audit's `core-embedded` row passes and says so.  The
-reason is honest rather than procedural: every operation here allocates
-a fresh buffer — `add` of two 1,000-element arrays is a 1,000-element
-list — and a package whose cheapest call is an allocation has no
-business in 64 KB of RAM.  A device that wants this arithmetic wants a
-fixed-size, caller-supplied buffer and a different interface, and that
-would be a different package rather than a flag on this one.
+## What the package contains
 
-## The load-bearing interface
-
-**Two concrete arrays, `NdFloat` and `NdInt`, and not one generic
-`NdArray<T>`.**  This is the decision every other one here follows from,
-and it was measured rather than assumed.
-
-A generic container and generic functions over it compile and run
-correctly inside a single module.  Across a module boundary — which is
-all a library is — three things go wrong on the toolchain this
-interface is written against:
-
-| what was tried | what happened |
+| Module | Contents |
 | --- | --- |
-| `pub fn nd_make<T>(data: [T], dims: [Int]) -> NdBox<T>` called from another module | internal compiler error `E6000` — "cannot resolve this call's return type: no typing_info entry, no registry signature, no user-fn signature" |
-| `pub fn nd_len<T>(a: NdBox<T>) -> Int` called from another module | the call's result is lowered as a pointer; LLVM verification fails on `store i64 %t10` of a `ptr` |
-| the same call with the destination annotated `let n: Int = …` | the same failure — the annotation does not rescue it |
+| `ndshape` | The layout: dims, strides, the element count, the flat address of one coordinate, the broadcasting rule, and the axis operations a view is built from. |
+| `ndfault` | The one error type for the whole package. Nine variants, each carrying the shapes or the numbers it compared. |
+| `ndbool` | `NdMask`, the shaped array of truths a comparison answers, and what a mask can be asked on its own: all, any, count, count along an axis, and the three logical combinations. |
+| `ndfloat` | The array of `Float`: construction, the views, broadcast arithmetic and comparison, the element-wise functions, reductions over the whole array and along one axis, selection, `dot` and `matmul`. |
+| `ndint` | The array of `Int`, with the same members under the same names, plus `take`, which gathers positions along an axis. |
 
-Under that, `impl` blocks carry no type parameters and an `impl` target
-must be a bare identifier, so `impl<T> NdArray<T>` and `impl Numeric for
-[T]` cannot be spelled either — which is why there is no numeric trait
-here that a single generic array could have been written against.
+## How to choose an entry point
 
-So a generic array would be a type nobody outside this package could
-call, and this package publishes two concrete ones that work.  The two
-surfaces MIRROR each other member for member and name for name, which
-is the deliberate part: the day a type parameter can leave a module,
-`NdFloat` and `NdInt` collapse into `NdArray<T>` by DELETION rather than
-by redesign, and a caller's `ndfloat.sum` becomes `ndarray.sum` with the
-same arguments in the same order.  The four places they honestly differ
-— integer division refusing a zero divisor where float division returns
-an infinity, a truncating `rem`, no `mean`/`sqrt`/`exp`/`ln`/`linspace`
-on the integers, and `take` living with the positions it gathers by —
-are exactly the four a generic version would still have to special-case.
+**Use `ndfloat` for measurements and `ndint` for counts, positions and
+labels.** The two surfaces carry the same members under the same names,
+so code written against one reads the same against the other.
 
-Both faults are reported to the toolchain, and neither is worked around
-here: this package publishes the surface that works rather than a
-design bent to fit a defect.
+They differ in four places, and each difference is a property of the
+element type.
 
-The three rules a reader has to know, each written down once in the
-code and pointed at from everywhere else:
-
-- **Broadcasting** — `ndshape.broadcast`.  Right-aligned, size-1
-  stretches, everything else refused.  A rank-0 scalar agrees with every
-  shape, which is why the arithmetic takes two arrays and never an array
-  and a number, and why there is no `add_scalar` beside `add`.
-- **Views versus copies** — `ndshape`'s module comment.  `transpose`,
-  `swap_axes`, `slice_axis`, `index_axis`, `broadcast_to` and a packed
-  `reshape` are views and do not copy.  In numpy that answer needs a
-  warning about aliasing; here it needs none, because a novo-lang list
-  is a value and nothing in this package writes in place.  A view is
-  free and it is safe, and those two facts have the same cause.  `pack`
-  is the deliberate copy.
-- **What an error is** — `ndfault`.  One enum, nine variants, every one
-  carrying the shapes it compared.
-
-## ndarray-nv and `orbit/ml`
-
-The must-have plan says "ml's tensors are the base", so this is the
-paragraph that says exactly how the two relate.
-
-**They do not share a type today, and neither is a subset of the
-other.**  `orbit/ml`'s numeric core is deliberately not an N-D tensor at
-all: it is `WMat` — a read-only, row-major, packed-**f32** weight matrix
-over `F32Buf`, always rank 2 — plus a bare `[Float]` f64 activation
-vector, and its own module comment says the narrowness is the point
-("deliberately only the two storage shapes a batch-1 LLM decoder
-actually uses").  `NdFloat` is f64 at any rank, immutable, strided and
-viewable.  So the three things that would have to agree do not:
-
-| | `orbit/ml` | ndarray-nv |
+| Difference | `ndfloat` | `ndint` |
 | --- | --- | --- |
-| element type | f32 in `WMat`, f64 in activations | f64 |
-| rank | exactly 2 (`WMat`) or exactly 1 (`[Float]`) | any |
-| layout | packed row-major, no strides, no offset | strides and an offset, so views are free |
-| mutability | a weight is read-only after load; `F32Buf.release` frees it by hand | a value; nothing is written in place and nothing is released |
+| Division by zero | answers an infinity | refused as an error |
+| Remainder | not present | `rem`, truncating |
+| `mean`, `sqrt`, `exp`, `ln`, `linspace` | present | absent, because each answers a number that is not an integer |
+| `take`, the gather along an axis | not present | present |
 
-**Would ml depend on ndarray-nv?**  Not as it stands, and not for
-`WMat`.  ml's f32 buffer exists so that a 7-billion-parameter model is
-half the RSS it would be in f64 and so that a safetensors F32 payload
-loads by `memcpy` with no conversion pass; widening it to `NdFloat`
-would double the memory of the thing the package exists to run.  The
-half that COULD move is the activation side — `ml/cpu.nv`'s `dot`,
-`ewadd`, `ewmul`, `argmax` and `softmax` over `[Float]` are, function for
-function, this package's rank-1 operations, and `ml` could take them
-from here and delete its own.  That is a real, small, testable step and
-it is what "ml's tensors are the base" cashes out to.
+`ndint.to_float` and `ndfloat.to_int` convert between the two.
+`ndbool.to_int` and `ndbool.of_int` convert a mask to and from an integer
+array of zeroes and ones.
 
-**What would have to change on either side for more than that.**  Three
-things, in the order they bind:
+**Most programs never name `ndshape` directly.** It is there for a
+program that computes a layout before it has an array, and for reading
+the dims and strides off one it has.
 
-1. **An f32 element type.**  ndarray-nv would need an `NdFloat32` over a
-   packed f32 buffer, which is a third concrete array — or, once a type
-   parameter can cross a module boundary, the third instantiation of one
-   generic array.  This is the load-bearing decision above wearing a
-   different hat: the generic-container limit is the same thing blocking
-   both.
-2. **A borrowed buffer.**  `WMat` is built over an mmap'd region through
-   `F32Buf`; `NdFloat` owns a `[Float]`.  Until ndarray-nv can be
-   constructed over a buffer it did not allocate, a loader cannot hand
-   it a model file without copying it.
-3. **`orbit/ml`'s layer.**  ml is an `app`, and a `core` package may not
-   depend on one — the direction is only ever ml depending on
-   ndarray-nv, never the reverse.  ml's `L0 core` would have to become
-   its own `core` package first, which is the `gguf-nv` / `tokenizers-nv`
-   split the plan already lists for ml.
+## The rules a user needs
 
-Until then the honest statement, and the one this package makes: **ml's
-`WMat` is the shape ndarray-nv is designed to be able to become, and the
-activation half is the part that can converge first.**
+1. **Broadcasting lines the shapes up from the right.** An axis of
+   extent 1 stretches to meet the other extent. An axis missing from the
+   shorter shape counts as extent 1. Any other disagreement is
+   `NdNotBroadcastable`, which carries both shapes. The rule is written
+   once, in `ndshape.broadcast`.
+2. **Arithmetic takes two arrays, never an array and a number.** Wrap the
+   number with `ndfloat.scalar` or `ndint.scalar`. A rank-0 array
+   broadcasts against every shape, so that call is the scalar case of
+   the ordinary operation.
+3. **`transpose`, `swap_axes`, `slice_axis`, `index_axis`,
+   `broadcast_to` and a `reshape` of a packed array are views.** They
+   copy nothing and cost a new shape. Everything else materialises a new
+   buffer.
+4. **A view keeps its whole buffer alive.** Slicing three elements out of
+   a large array and keeping only the slice keeps the large array too.
+   `pack` is the escape: it copies a view into a fresh, contiguous
+   buffer of exactly the right size. It is the only function here whose
+   purpose is to copy.
+5. **Nothing is written in place.** `with` answers a new array with one
+   element changed. There is no `set`.
+6. **Axes are numbered from 0 and count from the outermost.** The legal
+   range is 0 up to the rank, not including it. A negative axis number is
+   refused as `NdAxisOutOfRange` rather than counted from the end, which
+   is where this package departs from NumPy.
+7. **A reduction along an axis drops that axis.** Summing a 3-by-4 matrix
+   along axis 0 answers a rank-1 array of four elements, not a 1-by-4
+   matrix. This too departs from NumPy, which can keep the axis at
+   extent 1.
+8. **`min` and `max` skip NaN.** They behave as NumPy's `nanmin` and
+   `nanmax`, not as its `min` and `max`.
+9. **`argmin` and `argmax` answer the first position on a tie.** This
+   follows NumPy.
+10. **`arange` excludes its stop value and `linspace` includes it.** A
+    `linspace`'s last element is exactly the stop value. This follows
+    NumPy.
+11. **`matmul` promotes a rank-1 operand to a matrix and drops the
+    promoted axis from the result.** This follows NumPy. `dot` answers a
+    single number and is for two rank-1 arrays.
+12. **A comparison answers an `NdMask`, not a list of truths.** Feed the
+    mask to `select`, which keeps the elements it marks, or to `where`,
+    which chooses element by element between two arrays.
+13. **Every failure is one type, `NdFault`, and every variant carries the
+    numbers.** A message prints both shapes it compared, so a reader does
+    not have to guess which of four arrays in an expression was wrong.
 
-## What is not here
+## What is not included
 
-Named so a reader stops looking: no complex numbers, no f32 arrays, no
-sorting (`ndint.take` is the gather a sort's output feeds), no
-`einsum`, no decompositions (linalg-nv), no FFT (fft-nv), no random
-generation (a `core` package has no entropy — see stats-nv's README for
-the shape that takes draws as an argument), no in-place mutation and no
-iterator protocol over elements.
+- **Complex numbers.** A complex array is a second element type with its
+  own arithmetic. [fft-nv](https://novo-lang.org/packages/fft-nv) carries
+  complex data as an interleaved buffer of real and imaginary parts
+  instead.
+- **32-bit float arrays.** The buffer here is `Float`, which is 64-bit.
+- **One generic array type over an element type parameter.** A generic
+  function over a generic struct cannot be called from another module on
+  the toolchain this interface is written against. Three separate
+  compiler faults are filed for it. A library is a module boundary, so a
+  generic array would be a type no caller outside this package could
+  use. `NdFloat` and `NdInt` carry the same members in the same order, so
+  they can become one type by deletion when that is fixed.
+- **Sorting.** `ndint.take` is the gather that a sort's output feeds.
+- **`einsum`**, the index-notation contraction.
+- **Matrix decompositions.** LU, QR, Cholesky, the eigendecomposition and
+  the singular value decomposition are in
+  [linalg-nv](https://novo-lang.org/packages/linalg-nv).
+- **The Fourier transform.** It is in
+  [fft-nv](https://novo-lang.org/packages/fft-nv).
+- **Random number generation.** No function in this package draws
+  entropy. [stats-nv](https://novo-lang.org/packages/stats-nv) takes
+  random draws as an argument instead.
+- **In-place mutation, and an iterator over elements.** See rule 5.
+- **A microcontroller build.** Every operation here allocates a fresh
+  buffer. Adding two arrays of a thousand elements allocates a
+  thousand-element list. A device with no heap allocator needs a
+  fixed-size buffer the caller supplies, which is a different interface
+  rather than a flag on this one. This package makes no device claim and
+  ships no device probe.
 
-## The reference implementation
+## Related packages
 
-**numpy** (BSD-3-Clause) for the semantics a notebook expects, and
-**ndarray** (MIT/Apache-2.0) for the shape-and-strides design that makes
-views free.  The behaviours borrowed verbatim, so a reader can check the
-port rather than trust it: the right-aligned broadcasting rule; `arange`
-half-open and `linspace` closed with the last element exactly the stop;
-`argmin`/`argmax` answering with the FIRST position on a tie; `matmul`
-promoting a rank-1 operand and dropping the promoted axis again;
-`transpose` of a rank-1 array being that array.  Where this package
-departs, it says so in the doc comment: `min` and `max` skip NaN (numpy's
-`nanmin`, not its `min`), a negative axis number is refused rather than
-counted from the end, and a reduction along an axis DROPS that axis
-rather than keeping it as 1.
+- [linalg-nv](https://novo-lang.org/packages/linalg-nv) factors these
+  matrices and solves systems over them. Take it when you need a
+  determinant, an inverse, a least-squares fit or a singular value
+  decomposition.
+- [stats-nv](https://novo-lang.org/packages/stats-nv) reads these arrays
+  as samples. Take it for a mean with a variance beside it, a
+  distribution, or a hypothesis test.
+- [fft-nv](https://novo-lang.org/packages/fft-nv) transforms them. Its
+  one-dimensional transforms take a plain interleaved list; its
+  two-dimensional transforms take these arrays.
+- [dataframe-nv](https://novo-lang.org/packages/dataframe-nv) adds a
+  name, a null mask and non-numeric element types on top. A numeric
+  column converts to an array of this package and back.
+- [interpolate-nv](https://novo-lang.org/packages/interpolate-nv) uses
+  these arrays for the regular two-dimensional grid its surface
+  interpolation reads.
+- `std.array` in the standard library has an `ArrayF64` over a foreign
+  allocation. Every one of its methods declares the `[io]` effect,
+  because reading one element is a call out of novo-lang. This package
+  is a flat novo-lang list instead, and every function here declares no
+  effect at all.
 
-numpy's own test suite is the oracle the implementation lane will run
-the ported subset against.
+## Tests
 
-## Status
+```bash
+novo test tests/ndshape_tests.nv      # 11 tests: the layout and the broadcasting rule
+novo test tests/ndbool_tests.nv       #  7 tests: the mask
+novo test tests/ndfloat_tests.nv      # 24 tests: the array of Float
+novo test tests/ndint_tests.nv        # 11 tests: the array of Int
+```
 
-Every function is `todo()`.  `novo test --isolate` is the readable form
-of that verdict: each `@test` runs in its own process and prints the
-function it stopped at.
+The expected answers are NumPy's, for every behaviour this package
+borrows: the right-aligned broadcasting rule, the half-open `arange` and
+the closed `linspace`, the first position on an `argmax` tie, `matmul`
+promoting and then dropping a rank-1 axis, and the transpose of a rank-1
+array being that array. NumPy's own test suite is the oracle the
+implementation will be run against.
 
-| module | public functions | implemented |
-| --- | --- | --- |
-| `ndshape` | 11 | no |
-| `ndfault` | the `NdFault` enum and its `Error` impl | no |
-| `ndbool` | 17 | no |
-| `ndfloat` | 55 | no |
-| `ndint` | 46 | no |
+Every fixture is written out by hand rather than built by a constructor,
+so a test says what an operation owes a caller before any constructor
+exists. The suite asserts that a transpose does not copy, that a
+broadcast refusal names both shapes, that a reduction drops its axis,
+that an empty reduction is refused rather than answering zero, that a
+negative axis is refused, and that the four documented differences
+between `ndfloat` and `ndint` hold.
+
+The tests compile today and fail at run, each on the
+`not implemented: ndarray-nv.<module>.<fn>` panic that is its body. That
+is the expected state of an interface release. They turn green one at a
+time as bodies land.
+
+## Implementation status
+
+| Item | Implemented |
+| --- | --- |
+| `ndshape.NdShape`, `ndbool.NdMask`, `ndfloat.NdFloat`, `ndint.NdInt`, `ndfault.NdFault` | declared |
+| `ndshape.of_dims`, `.scalar`, `.rank`, `.size`, `.is_packed`, `.fits` | no |
+| `ndshape.flat_index`, `.broadcast`, `.swap_axes`, `.reverse_axes`, `.drop_axis` | no |
+| `ndfault`'s nine variants and its `Error` implementation | no |
+| `ndbool.of_list`, `.filled`, `.shape`, `.size`, `.at`, `.to_list` | no |
+| `ndbool.all`, `.any`, `.count`, `.count_axis`, `.both`, `.either`, `.invert` | no |
+| `ndbool.swap_axes`, `.pack`, `.to_int`, `.of_int` | no |
+| `ndfloat.of_list`, `.scalar`, `.zeros`, `.ones`, `.filled`, `.arange`, `.linspace`, `.eye` | no |
+| `ndfloat.shape`, `.rank`, `.size`, `.at`, `.with`, `.to_list` | no |
+| `ndfloat.reshape`, `.transpose`, `.swap_axes`, `.slice_axis`, `.index_axis`, `.broadcast_to`, `.pack` | no |
+| `ndfloat.add`, `.sub`, `.mul`, `.div`, `.pow`, `.neg`, `.abs`, `.sqrt`, `.exp`, `.ln`, `.map` | no |
+| `ndfloat.eq`, `.ne`, `.lt`, `.le`, `.gt`, `.ge`, `.select`, `.where` | no |
+| `ndfloat.sum`, `.mean`, `.min`, `.max`, `.argmin`, `.argmax` | no |
+| `ndfloat.sum_axis`, `.mean_axis`, `.min_axis`, `.max_axis`, `.argmin_axis`, `.argmax_axis` | no |
+| `ndfloat.dot`, `.matmul`, `.to_int` | no |
+| `ndint`'s forty-six functions, mirroring `ndfloat` and adding `.rem`, `.take`, `.to_float` | no |
+
+## Licence
+
+Apache-2.0. See `LICENSE`.
+
+<!-- docs/writing-a-readme.md is the style guide for this page. -->
