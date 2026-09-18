@@ -85,7 +85,14 @@ pub struct NdShape
 //     println("${s.strides}")
 // ```
 pub fn of_dims(dims: [Int]) -> NdShape
-    todo("ndarray-nv.ndshape.of_dims")
+    var strides: [Int] = []
+    var acc = 1
+    var i = list.len(dims) - 1
+    while i >= 0
+        strides = list.push(strides, acc)
+        acc = acc * dims[i]
+        i = i - 1
+    NdShape { dims: dims, strides: list.reverse(strides) }
 
 // The shape of a scalar: rank 0, one element, no axes.
 //
@@ -100,7 +107,7 @@ pub fn of_dims(dims: [Int]) -> NdShape
 //     println("${ndshape.rank(ndshape.scalar())}")
 // ```
 pub fn scalar() -> NdShape
-    todo("ndarray-nv.ndshape.scalar")
+    NdShape { dims: [], strides: [] }
 
 // How many axes this shape has.
 //
@@ -111,7 +118,7 @@ pub fn scalar() -> NdShape
 //     println("${ndshape.rank(ndshape.of_dims([2, 3, 4]))}")
 // ```
 pub fn rank(s: NdShape) -> Int
-    todo("ndarray-nv.ndshape.rank")
+    list.len(s.dims)
 
 // How many elements this shape describes: the product of its dims.
 //
@@ -125,7 +132,10 @@ pub fn rank(s: NdShape) -> Int
 //     println("${ndshape.size(ndshape.of_dims([2, 3]))}")
 // ```
 pub fn size(s: NdShape) -> Int
-    todo("ndarray-nv.ndshape.size")
+    var n = 1
+    for d in s.dims
+        n = n * d
+    n
 
 // Whether this shape reads the flat buffer front to back with no gaps
 // and no repeats.
@@ -143,7 +153,7 @@ pub fn size(s: NdShape) -> Int
 //     println("${ndshape.is_packed(ndshape.of_dims([2, 3]))}")
 // ```
 pub fn is_packed(s: NdShape) -> Bool
-    todo("ndarray-nv.ndshape.is_packed")
+    s.strides == of_dims(s.dims).strides
 
 // The flat position of one element, relative to the array's offset.
 //
@@ -161,7 +171,17 @@ pub fn is_packed(s: NdShape) -> Bool
 //         Err(e) => println(e.message())
 // ```
 pub fn flat_index(s: NdShape, index: [Int]) -> Result<Int, NdFault>
-    todo("ndarray-nv.ndshape.flat_index")
+    let r = list.len(s.dims)
+    if list.len(index) != r
+        return Err(NdRankMismatch(r, list.len(index)))
+    var flat = 0
+    var i = 0
+    while i < r
+        if index[i] < 0 or index[i] >= s.dims[i]
+            return Err(NdIndexOutOfRange(index, s.dims))
+        flat = flat + index[i] * s.strides[i]
+        i = i + 1
+    Ok(flat)
 
 // The shape two operands broadcast to, or why they do not.
 //
@@ -194,7 +214,35 @@ pub fn flat_index(s: NdShape, index: [Int]) -> Result<Int, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
-    todo("ndarray-nv.ndshape.broadcast")
+    let lr = list.len(left.dims)
+    let rr = list.len(right.dims)
+    var n = lr
+    if rr > n
+        n = rr
+    var dims: [Int] = []
+    var i = 0
+    while i < n
+        // The two shapes are lined up at their RIGHT ends, so axis `i` of
+        // the result reads axis `i - pad` of each operand and takes the
+        // extent 1 where that axis is off the front.
+        let li = i - (n - lr)
+        let ri = i - (n - rr)
+        var ld = 1
+        if li >= 0
+            ld = left.dims[li]
+        var rd = 1
+        if ri >= 0
+            rd = right.dims[ri]
+        if ld == rd
+            dims = list.push(dims, ld)
+        elif ld == 1
+            dims = list.push(dims, rd)
+        elif rd == 1
+            dims = list.push(dims, ld)
+        else
+            return Err(NdNotBroadcastable(left.dims, right.dims))
+        i = i + 1
+    Ok(of_dims(dims))
 
 // The shape with two axes exchanged.
 //
@@ -211,7 +259,24 @@ pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn swap_axes(s: NdShape, first: Int, second: Int) -> Result<NdShape, NdFault>
-    todo("ndarray-nv.ndshape.swap_axes")
+    let r = list.len(s.dims)
+    if first < 0 or first >= r
+        return Err(NdAxisOutOfRange(first, r))
+    if second < 0 or second >= r
+        return Err(NdAxisOutOfRange(second, r))
+    var dims: [Int] = []
+    var strides: [Int] = []
+    var i = 0
+    while i < r
+        var j = i
+        if i == first
+            j = second
+        elif i == second
+            j = first
+        dims = list.push(dims, s.dims[j])
+        strides = list.push(strides, s.strides[j])
+        i = i + 1
+    Ok(NdShape { dims: dims, strides: strides })
 
 // The shape with every axis reversed — the transpose of a matrix,
 // generalised.
@@ -227,7 +292,7 @@ pub fn swap_axes(s: NdShape, first: Int, second: Int) -> Result<NdShape, NdFault
 //     println("${ndshape.reverse_axes(ndshape.of_dims([2, 3])).dims}")
 // ```
 pub fn reverse_axes(s: NdShape) -> NdShape
-    todo("ndarray-nv.ndshape.reverse_axes")
+    NdShape { dims: list.reverse(s.dims), strides: list.reverse(s.strides) }
 
 // The shape with one axis dropped, as indexing a single position along
 // that axis leaves it.
@@ -245,7 +310,18 @@ pub fn reverse_axes(s: NdShape) -> NdShape
 //         Err(e) => println(e.message())
 // ```
 pub fn drop_axis(s: NdShape, axis: Int) -> Result<NdShape, NdFault>
-    todo("ndarray-nv.ndshape.drop_axis")
+    let r = list.len(s.dims)
+    if axis < 0 or axis >= r
+        return Err(NdAxisOutOfRange(axis, r))
+    var dims: [Int] = []
+    var strides: [Int] = []
+    var i = 0
+    while i < r
+        if i != axis
+            dims = list.push(dims, s.dims[i])
+            strides = list.push(strides, s.strides[i])
+        i = i + 1
+    Ok(NdShape { dims: dims, strides: strides })
 
 // Whether a buffer of this many elements can hold every element this
 // shape addresses, starting at `offset`.
@@ -263,4 +339,20 @@ pub fn drop_axis(s: NdShape, axis: Int) -> Result<NdShape, NdFault>
 //     println("${ndshape.fits(ndshape.of_dims([2, 3]), 0, 6)}")
 // ```
 pub fn fits(s: NdShape, offset: Int, buffer_len: Int) -> Bool
-    todo("ndarray-nv.ndshape.fits")
+    if offset < 0
+        return false
+    // The bound is the largest flat position the shape REACHES.  A zero
+    // extent makes the array address nothing at all, and a zero stride
+    // addresses no new memory, so neither adds to the reach.
+    var reach = offset
+    var empty = false
+    var i = 0
+    while i < list.len(s.dims)
+        if s.dims[i] <= 0
+            empty = true
+        else
+            reach = reach + (s.dims[i] - 1) * s.strides[i]
+        i = i + 1
+    if empty
+        return offset <= buffer_len
+    reach < buffer_len
