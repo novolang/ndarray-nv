@@ -45,6 +45,12 @@ is the one that was published — nothing moved, and nothing was added.
   `for i in 0..n` for a counter, `list.map` for an accumulator that
   only pushes, and `list.flat_map` for the walk that expands one axis
   at a time. No behaviour changed.
+- The range a `list.map` walks is written `0..n` rather than
+  `list.range(0, n)`. The two mean the same thing and `list.map` takes
+  either, but `list.range` is refused at the `wasm` tier, so the
+  spelling decides whether this package builds for a browser. The
+  publish records `tiers wasm,app` either way it is written here; it
+  recorded `tiers app` while the call was in.
 
 ### Decided
 

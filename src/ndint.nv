@@ -1005,11 +1005,12 @@ pub fn to_float(a: NdInt) -> NdFloat
 // ── The module's own machinery ─────────────────────────────────────
 //
 // Everything below is private, and it MIRRORS `ndfloat`'s machinery
-// function for function — the same reason the public surface does.
-// The walk, the stretch and the pairing live once per module rather
-// than published from `ndshape`, because a `pub fn` added to a package
-// eight others depend on is a wider change than thirty duplicated
-// lines, and the day `NdArray<T>` is spellable the copies become one.
+// function for function — for the same reason the public surface does.
+// The walk, the read, the stretch and the pairing live once per module
+// rather than published from `ndshape`, because a `pub fn` added to a
+// package eight others depend on is a wider change than thirty
+// duplicated lines, and the day `NdArray<T>` is spellable the copies
+// become one.
 
 // Every flat position this shape addresses, in row-major order, with
 // one axis left unexpanded.  `skip` of -1 expands every axis.

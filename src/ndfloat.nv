@@ -1278,12 +1278,13 @@ pub fn to_int(a: NdFloat) -> NdInt
 
 // ── The module's own machinery ─────────────────────────────────────
 //
-// Everything below is private.  The walk, the stretch and the pairing
-// are the same three `ndbool` and `ndint` carry, written out once per
-// module rather than published from `ndshape`: a `pub fn` added to a
-// package eight others depend on is a wider change than thirty
-// duplicated lines, and the day `NdArray<T>` is spellable these three
-// copies become one.
+// Everything below is private.  The walk, the read, the stretch and
+// the pairing are written out once per module rather than published
+// from `ndshape`: a `pub fn` added to a package eight others depend on
+// is a wider change than thirty duplicated lines, and the day
+// `NdArray<T>` is spellable these copies become one.  `ndbool` carries
+// the same set minus the fallible stretch, which only a public
+// `broadcast_to` needs and a mask does not have.
 
 // Every flat position this shape addresses, in row-major order, with
 // one axis left unexpanded.
