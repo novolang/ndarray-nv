@@ -1,0 +1,75 @@
+// bench_matmul.nv — the one number the next release is measured
+// against.
+//
+// Performance is not this release's deliverable; correctness and the
+// published semantics are.  This file exists so that the release
+// AFTER it has something to compare to, because a package with no
+// baseline cannot tell an optimisation from a regression.
+//
+// 64-by-64 is the size chosen: big enough that the 262,144
+// multiply-adds dominate the two buffer reads and the result's
+// allocation, small enough to run in a second on the interpreter too.
+//
+// It is a PROGRAM and not a `@test`.  A wall-clock assertion is a
+// test that fails on a loaded build machine and tells nobody
+// anything, so this prints a number and the reader decides.  `novo
+// test` never runs it — the file is not named `*_tests.nv` — and
+// `matmul` itself is asserted in three suites that are.
+//
+//     novo run tests/bench_matmul.nv
+//     novo run tests/bench_matmul.nv --interp
+//
+// `bench.black_box_float` is what keeps the answer alive: without it
+// LLVM can see that nothing reads the products and delete the loop,
+// and the benchmark then measures an empty loop very accurately.
+
+use std.time
+use std.bench
+use ndshape
+use ndfault
+use ndfloat
+use ndint
+use ndbool
+
+// An `n`-by-`n` matrix whose elements are a hash of their position,
+// so both operands are dense, neither is a special case, and the run
+// is the same run every time.
+fn dense(n: Int, salt: Int) -> NdFloat
+    var out: [Float] = []
+    var i = 0
+    while i < n * n
+        let h = (i * 7919 + salt * 104729 + 12345) % 1000
+        out = list.push(out, int.to_float(h - 500) / 100.0)
+        i = i + 1
+    match ndfloat.of_list(out, [n, n])
+        Ok(a)  => a
+        Err(_) => ndfloat.scalar(0.0)
+
+fn main() [io, time]
+    let n = 64
+    let reps = 20
+    let a = dense(n, 1)
+    let b = dense(n, 2)
+
+    // One multiply before the clock starts, so the first run's
+    // allocation growth is not counted as the cost of the loop.
+    var sink = 0.0
+    match ndfloat.matmul(a, b)
+        Ok(p)  => sink = bench.black_box_float(ndfloat.sum(p))
+        Err(e) => println("warm-up failed: ${e.message()}")
+
+    let t0 = time.now()
+    var i = 0
+    while i < reps
+        match ndfloat.matmul(a, b)
+            Ok(p)  => sink = bench.black_box_float(sink + ndfloat.sum(p))
+            Err(e) => println("matmul failed: ${e.message()}")
+        i = i + 1
+    let secs = time.elapsed_since(t0)
+
+    let per = secs / int.to_float(reps)
+    let ops = int.to_float(n * n * n)
+    println("ndarray-nv matmul ${n}x${n}: ${reps} multiplies in ${secs} s")
+    println("  per multiply : ${per * 1000.0} ms")
+    println("  per multiply-add : ${per / ops * 1000000000.0} ns")
+    println("  sink ${sink}")
