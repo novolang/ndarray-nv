@@ -175,12 +175,10 @@ pub fn flat_index(s: NdShape, index: [Int]) -> Result<Int, NdFault>
     if list.len(index) != r
         return Err(NdRankMismatch(r, list.len(index)))
     var flat = 0
-    var i = 0
-    while i < r
+    for i in 0..r
         if index[i] < 0 or index[i] >= s.dims[i]
             return Err(NdIndexOutOfRange(index, s.dims))
         flat = flat + index[i] * s.strides[i]
-        i = i + 1
     Ok(flat)
 
 // The shape two operands broadcast to, or why they do not.
@@ -220,8 +218,7 @@ pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
     if rr > n
         n = rr
     var dims: [Int] = []
-    var i = 0
-    while i < n
+    for i in 0..n
         // The two shapes are lined up at their RIGHT ends, so axis `i` of
         // the result reads axis `i - pad` of each operand and takes the
         // extent 1 where that axis is off the front.
@@ -241,7 +238,6 @@ pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
             dims = list.push(dims, ld)
         else
             return Err(NdNotBroadcastable(left.dims, right.dims))
-        i = i + 1
     Ok(of_dims(dims))
 
 // The shape with two axes exchanged.
@@ -266,8 +262,7 @@ pub fn swap_axes(s: NdShape, first: Int, second: Int) -> Result<NdShape, NdFault
         return Err(NdAxisOutOfRange(second, r))
     var dims: [Int] = []
     var strides: [Int] = []
-    var i = 0
-    while i < r
+    for i in 0..r
         var j = i
         if i == first
             j = second
@@ -275,7 +270,6 @@ pub fn swap_axes(s: NdShape, first: Int, second: Int) -> Result<NdShape, NdFault
             j = first
         dims = list.push(dims, s.dims[j])
         strides = list.push(strides, s.strides[j])
-        i = i + 1
     Ok(NdShape { dims: dims, strides: strides })
 
 // The shape with every axis reversed — the transpose of a matrix,
@@ -315,12 +309,10 @@ pub fn drop_axis(s: NdShape, axis: Int) -> Result<NdShape, NdFault>
         return Err(NdAxisOutOfRange(axis, r))
     var dims: [Int] = []
     var strides: [Int] = []
-    var i = 0
-    while i < r
+    for i in 0..r
         if i != axis
             dims = list.push(dims, s.dims[i])
             strides = list.push(strides, s.strides[i])
-        i = i + 1
     Ok(NdShape { dims: dims, strides: strides })
 
 // Whether a buffer of this many elements can hold every element this
@@ -346,13 +338,11 @@ pub fn fits(s: NdShape, offset: Int, buffer_len: Int) -> Bool
     // addresses no new memory, so neither adds to the reach.
     var reach = offset
     var empty = false
-    var i = 0
-    while i < list.len(s.dims)
+    for i in 0..list.len(s.dims)
         if s.dims[i] <= 0
             empty = true
         else
             reach = reach + (s.dims[i] - 1) * s.strides[i]
-        i = i + 1
     if empty
         return offset <= buffer_len
     reach < buffer_len

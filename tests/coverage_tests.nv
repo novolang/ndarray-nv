@@ -176,7 +176,7 @@ fn test_ndbool_every_branch() [io]
 
     test.case("at: inside and outside")
     match ndbool.of_list([true, false, true, false], [2, 2])
-        Ok(m) =>
+        Ok(m)  =>
             match ndbool.at(m, [1, 0])
                 Ok(v)  => test.assert(v)
                 Err(e) => test.fail("a legal index failed: ${e.message()}")
@@ -220,6 +220,7 @@ fn test_ndbool_every_branch() [io]
 
             test.case("to_int writes both 1 and 0")
             test.assert(ndint.to_list(ndbool.to_int(m)) == [1, 0, 1, 0])
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
     test.case("all of a mask with no false, and any of a mask with no true")
@@ -236,9 +237,9 @@ fn test_ndbool_every_branch() [io]
 
     test.case("both and either: true/false on each side, and the refusal")
     match ndbool.of_list([true, true, false, false], [4])
-        Ok(a) =>
+        Ok(a)  =>
             match ndbool.of_list([true, false, true, false], [4])
-                Ok(b) =>
+                Ok(b)  =>
                     match ndbool.both(a, b)
                         Ok(r)  => test.assert(ndbool.count(r) == 1)
                         Err(e) => test.fail("both failed: ${e.message()}")
@@ -249,6 +250,7 @@ fn test_ndbool_every_branch() [io]
                     test.case("invert flips, and twice is the mask back")
                     test.assert(ndbool.count(ndbool.invert(a)) == 2)
                     test.assert(ndbool.count(ndbool.invert(ndbool.invert(a))) == 2)
+
                 Err(e) => test.fail("of_list failed: ${e.message()}")
 
             match ndbool.filled([3], true)
@@ -259,7 +261,7 @@ fn test_ndbool_every_branch() [io]
                     match ndbool.either(a, three)
                         Ok(_)  => test.fail("a [4] and a [3] claimed to combine")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("filled failed: ${e.message()}")
+                Err(e)    => test.fail("filled failed: ${e.message()}")
 
             test.case("both and either stretch a rank-0 mask against a rank-1 one")
             match ndbool.of_list([true], [])
@@ -267,7 +269,8 @@ fn test_ndbool_every_branch() [io]
                     match ndbool.both(a, one)
                         Ok(r)  => test.assert(ndbool.count(r) == 2)
                         Err(e) => test.fail("a scalar mask failed to broadcast: ${e.message()}")
-                Err(e) => test.fail("of_list failed: ${e.message()}")
+                Err(e)  => test.fail("of_list failed: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
     test.case("of_int reads non-zero as true")
@@ -354,7 +357,7 @@ fn test_ndfloat_construction_every_branch() [io]
 @test
 fn test_ndfloat_views_every_branch() [io]
     match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
-        Ok(a) =>
+        Ok(a)  =>
             test.case("at: inside, off the end, and the wrong rank")
             match ndfloat.at(a, [1, 2])
                 Ok(v)  => test.assert(v == 6.0)
@@ -454,6 +457,7 @@ fn test_ndfloat_views_every_branch() [io]
             match ndfloat.of_list([1.0, 2.0], [2])
                 Ok(v)  => test.assert(ndfloat.to_list(ndfloat.transpose(v)) == [1.0, 2.0])
                 Err(e) => test.fail("of_list failed: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
 // ── ndfloat: arithmetic, transforms and comparisons ────────────────
@@ -461,7 +465,7 @@ fn test_ndfloat_views_every_branch() [io]
 @test
 fn test_ndfloat_arithmetic_every_branch() [io]
     match ndfloat.of_list([1.0, 4.0], [2])
-        Ok(a) =>
+        Ok(a)  =>
             match ndfloat.of_list([1.0, 2.0, 3.0], [3])
                 Ok(bad) =>
                     test.case("each of the five refuses shapes that do not broadcast")
@@ -500,7 +504,8 @@ fn test_ndfloat_arithmetic_every_branch() [io]
                     match ndfloat.ge(a, bad)
                         Ok(_)  => test.fail("ge answered")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("of_list failed: ${e.message()}")
+
+                Err(e)  => test.fail("of_list failed: ${e.message()}")
 
             test.case("the five arithmetic operations")
             match ndfloat.add(a, ndfloat.scalar(1.0))
@@ -558,9 +563,9 @@ fn test_ndfloat_arithmetic_every_branch() [io]
                                     test.assert(want == [2])
                                     test.assert(got == [5])
                                 _                          => test.fail("wrong variant")
-                Err(e) => test.fail("filled failed: ${e.message()}")
+                Err(e)    => test.fail("filled failed: ${e.message()}")
             match ndfloat.gt(a, ndfloat.scalar(2.0))
-                Ok(m) =>
+                Ok(m)  =>
                     match ndfloat.select(a, m)
                         Ok(p)  => test.assert(ndfloat.to_list(p) == [4.0])
                         Err(e) => test.fail("select: ${e.message()}")
@@ -577,8 +582,10 @@ fn test_ndfloat_arithmetic_every_branch() [io]
                             match ndfloat.where(m, a, three)
                                 Ok(_)  => test.fail("a [2] pair and a [3] arm claimed to combine")
                                 Err(_) => test.assert(true)
-                        Err(e) => test.fail("of_list failed: ${e.message()}")
+                        Err(e)    => test.fail("of_list failed: ${e.message()}")
+
                 Err(e) => test.fail("gt: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
 fn halve(x: Float) -> Float
@@ -592,7 +599,7 @@ fn twice(x: Int) -> Int
 @test
 fn test_ndfloat_reductions_every_branch() [io]
     match ndfloat.of_list([3.0, 1.0, 2.0, 4.0], [2, 2])
-        Ok(a) =>
+        Ok(a)  =>
             test.case("the whole-array reductions")
             test.assert(ndfloat.sum(a) == 10.0)
             match ndfloat.mean(a)
@@ -654,6 +661,7 @@ fn test_ndfloat_reductions_every_branch() [io]
             match ndfloat.matmul(a, a)
                 Ok(p)  => test.assert(ndfloat.to_list(p) == [11.0, 7.0, 14.0, 18.0])
                 Err(e) => test.fail("matmul: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
     test.case("every reduction of an empty array refuses, and sum does not")
@@ -679,7 +687,7 @@ fn test_ndfloat_reductions_every_branch() [io]
 
     test.case("the NaN arm of the extreme scan, on both ends and all-NaN")
     match ndfloat.of_list([2.0, math.nan(), 1.0, 3.0], [4])
-        Ok(n) =>
+        Ok(n)  =>
             match ndfloat.min(n)
                 Ok(v)  => test.assert(v == 1.0)
                 Err(e) => test.fail("min: ${e.message()}")
@@ -694,7 +702,7 @@ fn test_ndfloat_reductions_every_branch() [io]
                 Err(e) => test.fail("min_axis: ${e.message()}")
         Err(e) => test.fail("of_list failed: ${e.message()}")
     match ndfloat.of_list([math.nan()], [1])
-        Ok(n) =>
+        Ok(n)  =>
             match ndfloat.max(n)
                 Ok(v)  => test.assert(math.is_nan(v))
                 Err(e) => test.fail("an all-NaN max was refused: ${e.message()}")
@@ -705,7 +713,7 @@ fn test_ndfloat_reductions_every_branch() [io]
 
     test.case("a reduction ALONG an axis of extent 0 has no value either")
     match ndfloat.zeros([2, 0])
-        Ok(z) =>
+        Ok(z)  =>
             match ndfloat.mean_axis(z, 1)
                 Ok(_)  => test.fail("mean_axis answered")
                 Err(_) => test.assert(true)
@@ -726,7 +734,7 @@ fn test_ndfloat_reductions_every_branch() [io]
 @test
 fn test_ndfloat_products_every_branch() [io]
     match ndfloat.of_list([1.0, 2.0], [2])
-        Ok(v) =>
+        Ok(v)  =>
             test.case("dot: both rank refusals, the length refusal, and the answer")
             match ndfloat.dot(ndfloat.scalar(1.0), v)
                 Ok(_)  => test.fail("a rank-0 left operand answered")
@@ -739,7 +747,7 @@ fn test_ndfloat_products_every_branch() [io]
                     match ndfloat.dot(v, three)
                         Ok(_)  => test.fail("a [2] and a [3] answered")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("of_list failed: ${e.message()}")
+                Err(e)    => test.fail("of_list failed: ${e.message()}")
             match ndfloat.dot(v, v)
                 Ok(n)  => test.assert(n == 5.0)
                 Err(e) => test.fail("dot: ${e.message()}")
@@ -759,7 +767,7 @@ fn test_ndfloat_products_every_branch() [io]
                     match ndfloat.matmul(v, cube)
                         Ok(_)  => test.fail("a rank-3 right operand answered")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("zeros failed: ${e.message()}")
+                Err(e)   => test.fail("zeros failed: ${e.message()}")
 
             test.case("matmul: the inner-dimension refusal, and all four rank shapes")
             match ndfloat.of_list([1.0, 2.0, 3.0], [3])
@@ -767,7 +775,7 @@ fn test_ndfloat_products_every_branch() [io]
                     match ndfloat.matmul(v, three)
                         Ok(_)  => test.fail("a [2] and a [3] were multiplied")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("of_list failed: ${e.message()}")
+                Err(e)    => test.fail("of_list failed: ${e.message()}")
             match ndfloat.matmul(v, v)
                 Ok(p)  => test.assert(ndfloat.rank(p) == 0)
                 Err(e) => test.fail("1-D by 1-D: ${e.message()}")
@@ -787,6 +795,7 @@ fn test_ndfloat_products_every_branch() [io]
                         Ok(p)  => test.assert(ndfloat.rank(p) == 2)
                         Err(e) => test.fail("2-D by 2-D: ${e.message()}")
                 Err(e) => test.fail("of_list failed: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
 // ── ndint: every branch of the integer array ───────────────────────
@@ -829,7 +838,7 @@ fn test_ndint_construction_and_views_every_branch() [io]
         Err(e) => test.fail("failed: ${e.message()}")
 
     match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
-        Ok(a) =>
+        Ok(a)  =>
             test.case("at, with, to_list and their refusals")
             match ndint.at(a, [1, 2])
                 Ok(v)  => test.assert(v == 6)
@@ -929,12 +938,13 @@ fn test_ndint_construction_and_views_every_branch() [io]
                     test.assert(ndint.shape(t).dims == [2, 3])
                     test.assert(ndint.to_list(t) == [3, 3, 1, 6, 6, 4])
                 Err(e) => test.fail("a legal gather failed: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
 @test
 fn test_ndint_arithmetic_and_reductions_every_branch() [io]
     match ndint.of_list([3, 1, 2, 4], [2, 2])
-        Ok(a) =>
+        Ok(a)  =>
             match ndint.of_list([1, 2, 3], [3])
                 Ok(bad) =>
                     test.case("every binary operation refuses shapes that do not broadcast")
@@ -971,7 +981,7 @@ fn test_ndint_arithmetic_and_reductions_every_branch() [io]
                     match ndint.ge(a, bad)
                         Ok(_)  => test.fail("ge answered")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("of_list failed: ${e.message()}")
+                Err(e)  => test.fail("of_list failed: ${e.message()}")
 
             test.case("the arithmetic, and the zero divisor on both of the two that have one")
             match ndint.add(a, ndint.scalar(1))
@@ -1027,9 +1037,9 @@ fn test_ndint_arithmetic_and_reductions_every_branch() [io]
                     match ndint.select(a, wrong)
                         Ok(_)  => test.fail("a [5] mask selected from a 2-by-2")
                         Err(_) => test.assert(true)
-                Err(e) => test.fail("filled failed: ${e.message()}")
+                Err(e)    => test.fail("filled failed: ${e.message()}")
             match ndint.gt(a, ndint.scalar(2))
-                Ok(m) =>
+                Ok(m)  =>
                     match ndint.select(a, m)
                         Ok(p)  => test.assert(ndint.to_list(p) == [3, 4])
                         Err(e) => test.fail("select: ${e.message()}")
@@ -1074,7 +1084,7 @@ fn test_ndint_arithmetic_and_reductions_every_branch() [io]
                 Ok(p)  => test.assert(ndint.to_list(p) == [11, 7, 14, 18])
                 Err(e) => test.fail("matmul: ${e.message()}")
             match ndint.of_list([1, 1], [2])
-                Ok(v) =>
+                Ok(v)  =>
                     match ndint.matmul(v, a)
                         Ok(p)  => test.assert(ndint.to_list(p) == [5, 5])
                         Err(e) => test.fail("1-D by 2-D: ${e.message()}")
@@ -1101,7 +1111,7 @@ fn test_ndint_arithmetic_and_reductions_every_branch() [io]
                             match ndint.matmul(v, three)
                                 Ok(_)  => test.fail("a [2] and a [3] were multiplied")
                                 Err(_) => test.assert(true)
-                        Err(e) => test.fail("of_list failed: ${e.message()}")
+                        Err(e)    => test.fail("of_list failed: ${e.message()}")
                     match ndint.matmul(ndint.scalar(1), v)
                         Ok(_)  => test.fail("a rank-0 left operand answered")
                         Err(_) => test.assert(true)
@@ -1116,8 +1126,9 @@ fn test_ndint_arithmetic_and_reductions_every_branch() [io]
                             match ndint.matmul(v, cube)
                                 Ok(_)  => test.fail("a rank-3 right operand answered")
                                 Err(_) => test.assert(true)
-                        Err(e) => test.fail("zeros failed: ${e.message()}")
+                        Err(e)   => test.fail("zeros failed: ${e.message()}")
                 Err(e) => test.fail("of_list failed: ${e.message()}")
+
         Err(e) => test.fail("of_list failed: ${e.message()}")
 
     test.case("every reduction of an empty integer array")
@@ -1140,7 +1151,7 @@ fn test_ndint_arithmetic_and_reductions_every_branch() [io]
 
     test.case("and along an axis of extent 0")
     match ndint.zeros([2, 0])
-        Ok(z) =>
+        Ok(z)  =>
             match ndint.min_axis(z, 1)
                 Ok(_)  => test.fail("min_axis answered")
                 Err(_) => test.assert(true)

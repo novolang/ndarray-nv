@@ -149,11 +149,7 @@ pub fn filled(dims: [Int], value: Float) -> Result<NdFloat, NdFault>
         if d < 0
             return Err(NdBadRange("a shape with a negative dimension"))
     let s = ndshape.of_dims(dims)
-    var out: [Float] = []
-    var i = 0
-    while i < ndshape.size(s)
-        out = list.push(out, value)
-        i = i + 1
+    let out: [Float] = list.map(list.range(0, ndshape.size(s)), i => value)
     Ok(NdFloat { data: out, shape: s, offset: 0 })
 
 // The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
@@ -185,11 +181,7 @@ pub fn arange(start: Float, stop: Float, step: Float) -> Result<NdFloat, NdFault
     // is `start + i*step` rather than an accumulation, so the drift over
     // a long range is one rounding rather than n of them.
     let n = float.to_int(math.ceil((stop - start) / step))
-    var out: [Float] = []
-    var i = 0
-    while i < n
-        out = list.push(out, start + int.to_float(i) * step)
-        i = i + 1
+    let out: [Float] = list.map(list.range(0, n), i => start + int.to_float(i) * step)
     Ok(NdFloat { data: out, shape: ndshape.of_dims([n]), offset: 0 })
 
 // `count` evenly spaced numbers from `start` to `stop`, both INCLUDED.
@@ -217,14 +209,12 @@ pub fn linspace(start: Float, stop: Float, count: Int) -> Result<NdFloat, NdFaul
     let last = count - 1
     let span = stop - start
     var out: [Float] = []
-    var i = 0
-    while i < count
+    for i in 0..count
         if i == last
             // Exactly the stop, not the accumulation of `count - 1` steps.
             out = list.push(out, stop)
         else
             out = list.push(out, start + int.to_float(i) * span / int.to_float(last))
-        i = i + 1
     Ok(NdFloat { data: out, shape: ndshape.of_dims([count]), offset: 0 })
 
 // The `n`-by-`n` identity matrix.
@@ -241,16 +231,12 @@ pub fn eye(n: Int) -> Result<NdFloat, NdFault>
     if n < 0
         return Err(NdBadRange("an identity matrix of negative size"))
     var out: [Float] = []
-    var i = 0
-    while i < n
-        var j = 0
-        while j < n
+    for i in 0..n
+        for j in 0..n
             if i == j
                 out = list.push(out, 1.0)
             else
                 out = list.push(out, 0.0)
-            j = j + 1
-        i = i + 1
     Ok(NdFloat { data: out, shape: ndshape.of_dims([n, n]), offset: 0 })
 
 // This array's layout.
@@ -337,7 +323,7 @@ pub fn with(a: NdFloat, index: [Int], value: Float) -> Result<NdFloat, NdFault>
     let packed = ndshape.of_dims(a.shape.dims)
     match ndshape.flat_index(packed, index)
         Err(e) => Err(e)
-        Ok(at)  =>
+        Ok(at) =>
             var out: [Float] = []
             var i = 0
             for v in nf_read(a)
@@ -454,13 +440,11 @@ pub fn slice_axis(a: NdFloat, axis: Int, start: Int, stop: Int) -> Result<NdFloa
     if start < 0 or stop < start or stop > a.shape.dims[axis]
         return Err(NdBadRange("a slice whose bounds are not inside its axis"))
     var dims: [Int] = []
-    var i = 0
-    while i < r
+    for i in 0..r
         if i == axis
             dims = list.push(dims, stop - start)
         else
             dims = list.push(dims, a.shape.dims[i])
-        i = i + 1
     Ok(NdFloat { data: a.data,
         shape: NdShape { dims: dims, strides: a.shape.strides },
         offset: a.offset + start * a.shape.strides[axis] })
@@ -716,9 +700,7 @@ pub fn ln(a: NdFloat) -> NdFloat
 //         Err(e) => println(e.message())
 // ```
 pub fn map(a: NdFloat, f: fn(Float) -> Float) -> NdFloat
-    var out: [Float] = []
-    for v in nf_read(a)
-        out = list.push(out, f(v))
+    let out: [Float] = list.map(nf_read(a), v => f(v))
     NdFloat { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
 
 // Where two arrays are equal, broadcasting by `ndshape.broadcast`.
@@ -854,11 +836,9 @@ pub fn select(a: NdFloat, keep: NdMask) -> Result<NdFloat, NdFault>
     let vals = nf_read(a)
     let flags = ndbool.to_list(keep)
     var out: [Float] = []
-    var i = 0
-    while i < list.len(vals)
+    for i in 0..list.len(vals)
         if flags[i]
             out = list.push(out, vals[i])
-        i = i + 1
     Ok(NdFloat { data: out, shape: ndshape.of_dims([list.len(out)]), offset: 0 })
 
 // `when_true` where the mask is true and `when_false` where it is
@@ -884,7 +864,7 @@ pub fn select(a: NdFloat, keep: NdMask) -> Result<NdFloat, NdFault>
 // ```
 pub fn where(keep: NdMask, when_true: NdFloat, when_false: NdFloat) -> Result<NdFloat, NdFault>
     match ndshape.broadcast(ndbool.shape(keep), when_true.shape)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(half) =>
             match ndshape.broadcast(half, when_false.shape)
                 Err(e) => Err(e)
@@ -894,13 +874,11 @@ pub fn where(keep: NdMask, when_true: NdFloat, when_false: NdFloat) -> Result<Nd
                     let t = nf_spread(when_true, bs.dims)
                     let f = nf_spread(when_false, bs.dims)
                     var out: [Float] = []
-                    var i = 0
-                    while i < list.len(flags)
+                    for i in 0..list.len(flags)
                         if flags[i]
                             out = list.push(out, t[i])
                         else
                             out = list.push(out, f[i])
-                        i = i + 1
                     Ok(NdFloat { data: out, shape: ndshape.of_dims(bs.dims), offset: 0 })
 
 // Every element added up.
@@ -1052,7 +1030,7 @@ pub fn argmax(a: NdFloat) -> Result<[Int], NdFault>
 // ```
 pub fn sum_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             var out: [Float] = []
             for lane in nf_lanes(a, axis)
@@ -1080,7 +1058,7 @@ pub fn sum_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
 // ```
 pub fn mean_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("mean_axis"))
@@ -1109,13 +1087,11 @@ pub fn mean_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
 // ```
 pub fn min_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("min_axis"))
-            var out: [Float] = []
-            for lane in nf_lanes(a, axis)
-                out = list.push(out, lane[nf_extreme(lane, true)])
+            let out: [Float] = list.map(nf_lanes(a, axis), lane => lane[nf_extreme(lane, true)])
             Ok(NdFloat { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Largest elements along one axis, which is dropped.
@@ -1134,13 +1110,11 @@ pub fn min_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
 // ```
 pub fn max_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("max_axis"))
-            var out: [Float] = []
-            for lane in nf_lanes(a, axis)
-                out = list.push(out, lane[nf_extreme(lane, false)])
+            let out: [Float] = list.map(nf_lanes(a, axis), lane => lane[nf_extreme(lane, false)])
             Ok(NdFloat { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Positions of the smallest element along one axis, which is dropped.
@@ -1163,13 +1137,11 @@ pub fn max_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
 // ```
 pub fn argmin_axis(a: NdFloat, axis: Int) -> Result<NdInt, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("argmin_axis"))
-            var out: [Int] = []
-            for lane in nf_lanes(a, axis)
-                out = list.push(out, nf_extreme(lane, true))
+            let out: [Int] = list.map(nf_lanes(a, axis), lane => nf_extreme(lane, true))
             Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Positions of the largest element along one axis, which is dropped.
@@ -1188,13 +1160,11 @@ pub fn argmin_axis(a: NdFloat, axis: Int) -> Result<NdInt, NdFault>
 // ```
 pub fn argmax_axis(a: NdFloat, axis: Int) -> Result<NdInt, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("argmax_axis"))
-            var out: [Int] = []
-            for lane in nf_lanes(a, axis)
-                out = list.push(out, nf_extreme(lane, false))
+            let out: [Int] = list.map(nf_lanes(a, axis), lane => nf_extreme(lane, false))
             Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // The inner product of two rank-1 arrays.
@@ -1227,10 +1197,8 @@ pub fn dot(left: NdFloat, right: NdFloat) -> Result<Float, NdFault>
     let l = nf_read(left)
     let r = nf_read(right)
     var total = 0.0
-    var i = 0
-    while i < list.len(l)
+    for i in 0..list.len(l)
         total = total + l[i] * r[i]
-        i = i + 1
     Ok(total)
 
 // The matrix product.
@@ -1276,18 +1244,12 @@ pub fn matmul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
     let l = nf_read(left)
     let r = nf_read(right)
     var out: [Float] = []
-    var i = 0
-    while i < rows
-        var j = 0
-        while j < cols
+    for i in 0..rows
+        for j in 0..cols
             var total = 0.0
-            var p = 0
-            while p < inner
+            for p in 0..inner
                 total = total + l[i * inner + p] * r[p * cols + j]
-                p = p + 1
             out = list.push(out, total)
-            j = j + 1
-        i = i + 1
     var dims: [Int] = [rows, cols]
     if lr == 1 and rr == 1
         dims = []
@@ -1311,9 +1273,7 @@ pub fn matmul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_int(a: NdFloat) -> NdInt
-    var out: [Int] = []
-    for v in nf_read(a)
-        out = list.push(out, float.to_int(v))
+    let out: [Int] = list.map(nf_read(a), v => float.to_int(v))
     NdInt { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
 
 // ── The module's own machinery ─────────────────────────────────────
@@ -1334,40 +1294,31 @@ pub fn to_int(a: NdFloat) -> NdInt
 // a reduction along it walks.
 fn nf_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
     var acc: [Int] = [offset]
-    var ax = 0
-    while ax < list.len(s.dims)
+    for ax in 0..list.len(s.dims)
         if ax != skip
-            var next: [Int] = []
-            for base in acc
-                var k = 0
-                while k < s.dims[ax]
-                    next = list.push(next, base + k * s.strides[ax])
-                    k = k + 1
-            acc = next
-        ax = ax + 1
+            // Expanding one axis multiplies the positions gathered so
+            // far by that axis's extent, which is what `flat_map` is.
+            let extent = s.dims[ax]
+            let step = s.strides[ax]
+            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
     acc
 
 // Every element in row-major order, view or not.
 fn nf_read(a: NdFloat) -> [Float]
-    var out: [Float] = []
-    for o in nf_walk(a.shape, a.offset, -1)
-        out = list.push(out, a.data[o])
-    out
+    // A PACKED array's buffer, read in order from its offset, already
+    // IS its elements in row-major order — `ndshape.is_packed` says so
+    // — so the common case hands the buffer back and walks nothing.
+    if a.offset == 0 and ndshape.is_packed(a.shape) and list.len(a.data) == ndshape.size(a.shape)
+        return a.data
+    list.map(nf_walk(a.shape, a.offset, -1), o => a.data[o])
 
 // One lane per element of the reduced array: the elements that a
 // reduction along `axis` folds, in the result's row-major order.
 fn nf_lanes(a: NdFloat, axis: Int) -> [[Float]]
     let extent = a.shape.dims[axis]
     let step = a.shape.strides[axis]
-    var out: [[Float]] = []
-    for base in nf_walk(a.shape, a.offset, axis)
-        var lane: [Float] = []
-        var k = 0
-        while k < extent
-            lane = list.push(lane, a.data[base + k * step])
-            k = k + 1
-        out = list.push(out, lane)
-    out
+    list.map(nf_walk(a.shape, a.offset, axis),
+        base => list.map(list.range(0, extent), k => a.data[base + k * step]))
 
 // The strides that stretch `s` to `dims`, or why they do not.
 //
@@ -1380,8 +1331,7 @@ fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
     if n < r
         return Err(NdNotBroadcastable(s.dims, dims))
     var strides: [Int] = []
-    var i = 0
-    while i < n
+    for i in 0..n
         let si = i - (n - r)
         var d = 1
         var st = 0
@@ -1394,7 +1344,6 @@ fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
             strides = list.push(strides, 0)
         else
             return Err(NdNotBroadcastable(s.dims, dims))
-        i = i + 1
     Ok(NdShape { dims: dims, strides: strides })
 
 // The strides that read `s` over `dims`, where `dims` is ALREADY a
@@ -1411,14 +1360,12 @@ fn nf_widen(s: NdShape, dims: [Int]) -> NdShape
     let r = list.len(s.dims)
     let n = list.len(dims)
     var strides: [Int] = []
-    var i = 0
-    while i < n
+    for i in 0..n
         let si = i - (n - r)
         if si >= 0 and s.dims[si] == dims[i]
             strides = list.push(strides, s.strides[si])
         else
             strides = list.push(strides, 0)
-        i = i + 1
     NdShape { dims: dims, strides: strides }
 
 // One operand stretched to a shape it is already known to reach, and
@@ -1444,11 +1391,7 @@ fn nf_zip(left: NdFloat, right: NdFloat, f: fn(Float, Float) -> Float) -> Result
     match nf_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            var out: [Float] = []
-            var i = 0
-            while i < list.len(p.left)
-                out = list.push(out, f(p.left[i], p.right[i]))
-                i = i + 1
+            let out: [Float] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
             Ok(NdFloat { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The broadcast comparison, once, for all six of them.
@@ -1456,11 +1399,7 @@ fn nf_compare(left: NdFloat, right: NdFloat, f: fn(Float, Float) -> Bool) -> Res
     match nf_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            var out: [Bool] = []
-            var i = 0
-            while i < list.len(p.left)
-                out = list.push(out, f(p.left[i], p.right[i]))
-                i = i + 1
+            let out: [Bool] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The position of the smallest (or largest) element, SKIPPING NaN and
@@ -1475,8 +1414,7 @@ fn nf_extreme(vals: [Float], smallest: Bool) -> Int
     var at = 0
     var best = 0.0
     var seen = false
-    var i = 0
-    while i < list.len(vals)
+    for i in 0..list.len(vals)
         if not math.is_nan(vals[i])
             var better = vals[i] > best
             if smallest
@@ -1485,7 +1423,6 @@ fn nf_extreme(vals: [Float], smallest: Bool) -> Int
                 best = vals[i]
                 at = i
                 seen = true
-        i = i + 1
     at
 
 // The full index of a row-major position, which is what `argmin` and
@@ -1497,11 +1434,9 @@ fn nf_unravel(dims: [Int], flat: Int) -> [Int]
     let s = ndshape.of_dims(dims)
     var out: [Int] = []
     var rest = flat
-    var i = 0
-    while i < list.len(dims)
+    for i in 0..list.len(dims)
         out = list.push(out, rest / s.strides[i])
         rest = rest % s.strides[i]
-        i = i + 1
     out
 
 // The five arithmetic operations and the six comparisons, as values

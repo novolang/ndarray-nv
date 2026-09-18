@@ -127,11 +127,7 @@ pub fn filled(dims: [Int], value: Int) -> Result<NdInt, NdFault>
         if d < 0
             return Err(NdBadRange("a shape with a negative dimension"))
     let s = ndshape.of_dims(dims)
-    var out: [Int] = []
-    var i = 0
-    while i < ndshape.size(s)
-        out = list.push(out, value)
-        i = i + 1
+    let out: [Int] = list.map(list.range(0, ndshape.size(s)), i => value)
     Ok(NdInt { data: out, shape: s, offset: 0 })
 
 // The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
@@ -164,11 +160,7 @@ pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
         span = start - stop
         width = 0 - step
     let n = (span + width - 1) / width
-    var out: [Int] = []
-    var i = 0
-    while i < n
-        out = list.push(out, start + i * step)
-        i = i + 1
+    let out: [Int] = list.map(list.range(0, n), i => start + i * step)
     Ok(NdInt { data: out, shape: ndshape.of_dims([n]), offset: 0 })
 
 // This array's layout.
@@ -247,7 +239,7 @@ pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
     let packed = ndshape.of_dims(a.shape.dims)
     match ndshape.flat_index(packed, index)
         Err(e) => Err(e)
-        Ok(at)  =>
+        Ok(at) =>
             var out: [Int] = []
             var i = 0
             for v in ni_read(a)
@@ -349,13 +341,11 @@ pub fn slice_axis(a: NdInt, axis: Int, start: Int, stop: Int) -> Result<NdInt, N
     if start < 0 or stop < start or stop > a.shape.dims[axis]
         return Err(NdBadRange("a slice whose bounds are not inside its axis"))
     var dims: [Int] = []
-    var i = 0
-    while i < r
+    for i in 0..r
         if i == axis
             dims = list.push(dims, stop - start)
         else
             dims = list.push(dims, a.shape.dims[i])
-        i = i + 1
     Ok(NdInt { data: a.data,
         shape: NdShape { dims: dims, strides: a.shape.strides },
         offset: a.offset + start * a.shape.strides[axis] })
@@ -492,12 +482,10 @@ pub fn div(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
         Err(e) => Err(e)
         Ok(p)  =>
             var out: [Int] = []
-            var i = 0
-            while i < list.len(p.left)
+            for i in 0..list.len(p.left)
                 if p.right[i] == 0
                     return Err(NdBadRange("an integer division by zero"))
                 out = list.push(out, p.left[i] / p.right[i])
-                i = i + 1
             Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Element-by-element remainder, with the sign of the DIVIDEND, on the
@@ -519,12 +507,10 @@ pub fn rem(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
         Err(e) => Err(e)
         Ok(p)  =>
             var out: [Int] = []
-            var i = 0
-            while i < list.len(p.left)
+            for i in 0..list.len(p.left)
                 if p.right[i] == 0
                     return Err(NdBadRange("an integer remainder by zero"))
                 out = list.push(out, p.left[i] % p.right[i])
-                i = i + 1
             Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Every element negated.
@@ -567,9 +553,7 @@ pub fn abs(a: NdInt) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn map(a: NdInt, f: fn(Int) -> Int) -> NdInt
-    var out: [Int] = []
-    for v in ni_read(a)
-        out = list.push(out, f(v))
+    let out: [Int] = list.map(ni_read(a), v => f(v))
     NdInt { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
 
 // Where two arrays are equal, broadcasting by `ndshape.broadcast`.
@@ -699,11 +683,9 @@ pub fn select(a: NdInt, keep: NdMask) -> Result<NdInt, NdFault>
     let vals = ni_read(a)
     let flags = ndbool.to_list(keep)
     var out: [Int] = []
-    var i = 0
-    while i < list.len(vals)
+    for i in 0..list.len(vals)
         if flags[i]
             out = list.push(out, vals[i])
-        i = i + 1
     Ok(NdInt { data: out, shape: ndshape.of_dims([list.len(out)]), offset: 0 })
 
 // The elements at these positions along one axis, in the order given.
@@ -740,31 +722,20 @@ pub fn take(a: NdInt, axis: Int, positions: [Int]) -> Result<NdInt, NdFault>
     // A gather is not expressible as strides, so the walk substitutes the
     // caller's positions for the gathered axis and materialises.
     var acc: [Int] = [a.offset]
-    var ax = 0
-    while ax < r
-        var next: [Int] = []
-        for base in acc
-            if ax == axis
-                for p in positions
-                    next = list.push(next, base + p * a.shape.strides[ax])
-            else
-                var k = 0
-                while k < a.shape.dims[ax]
-                    next = list.push(next, base + k * a.shape.strides[ax])
-                    k = k + 1
-        acc = next
-        ax = ax + 1
+    for ax in 0..r
+        let step = a.shape.strides[ax]
+        if ax == axis
+            acc = list.flat_map(acc, base => list.map(positions, p => base + p * step))
+        else
+            let extent = a.shape.dims[ax]
+            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
     var dims: [Int] = []
-    var i = 0
-    while i < r
+    for i in 0..r
         if i == axis
             dims = list.push(dims, list.len(positions))
         else
             dims = list.push(dims, a.shape.dims[i])
-        i = i + 1
-    var out: [Int] = []
-    for o in acc
-        out = list.push(out, a.data[o])
+    let out: [Int] = list.map(acc, o => a.data[o])
     Ok(NdInt { data: out, shape: ndshape.of_dims(dims), offset: 0 })
 
 // Every element added up.  The sum of nothing is 0.
@@ -876,7 +847,7 @@ pub fn argmax(a: NdInt) -> Result<[Int], NdFault>
 // ```
 pub fn sum_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             var out: [Int] = []
             for lane in ni_lanes(a, axis)
@@ -902,13 +873,11 @@ pub fn sum_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
 // ```
 pub fn min_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("min_axis"))
-            var out: [Int] = []
-            for lane in ni_lanes(a, axis)
-                out = list.push(out, lane[ni_extreme(lane, true)])
+            let out: [Int] = list.map(ni_lanes(a, axis), lane => lane[ni_extreme(lane, true)])
             Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Largest elements along one axis, which is dropped.
@@ -927,13 +896,11 @@ pub fn min_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
 // ```
 pub fn max_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
     match ndshape.drop_axis(a.shape, axis)
-        Err(e) => Err(e)
+        Err(e)   => Err(e)
         Ok(rest) =>
             if a.shape.dims[axis] == 0
                 return Err(NdEmptyReduction("max_axis"))
-            var out: [Int] = []
-            for lane in ni_lanes(a, axis)
-                out = list.push(out, lane[ni_extreme(lane, false)])
+            let out: [Int] = list.map(ni_lanes(a, axis), lane => lane[ni_extreme(lane, false)])
             Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // The inner product of two rank-1 arrays.  `NdNotMatrix` at any other
@@ -962,10 +929,8 @@ pub fn dot(left: NdInt, right: NdInt) -> Result<Int, NdFault>
     let l = ni_read(left)
     let r = ni_read(right)
     var total = 0
-    var i = 0
-    while i < list.len(l)
+    for i in 0..list.len(l)
         total = total + l[i] * r[i]
-        i = i + 1
     Ok(total)
 
 // The matrix product, on `ndfloat.matmul`'s rank rules.
@@ -1004,18 +969,12 @@ pub fn matmul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
     let l = ni_read(left)
     let r = ni_read(right)
     var out: [Int] = []
-    var i = 0
-    while i < rows
-        var j = 0
-        while j < cols
+    for i in 0..rows
+        for j in 0..cols
             var total = 0
-            var p = 0
-            while p < inner
+            for p in 0..inner
                 total = total + l[i * inner + p] * r[p * cols + j]
-                p = p + 1
             out = list.push(out, total)
-            j = j + 1
-        i = i + 1
     var dims: [Int] = [rows, cols]
     if lr == 1 and rr == 1
         dims = []
@@ -1040,9 +999,7 @@ pub fn matmul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_float(a: NdInt) -> NdFloat
-    var out: [Float] = []
-    for v in ni_read(a)
-        out = list.push(out, int.to_float(v))
+    let out: [Float] = list.map(ni_read(a), v => int.to_float(v))
     NdFloat { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
 
 // ── The module's own machinery ─────────────────────────────────────
@@ -1058,40 +1015,31 @@ pub fn to_float(a: NdInt) -> NdFloat
 // one axis left unexpanded.  `skip` of -1 expands every axis.
 fn ni_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
     var acc: [Int] = [offset]
-    var ax = 0
-    while ax < list.len(s.dims)
+    for ax in 0..list.len(s.dims)
         if ax != skip
-            var next: [Int] = []
-            for base in acc
-                var k = 0
-                while k < s.dims[ax]
-                    next = list.push(next, base + k * s.strides[ax])
-                    k = k + 1
-            acc = next
-        ax = ax + 1
+            // Expanding one axis multiplies the positions gathered so
+            // far by that axis's extent, which is what `flat_map` is.
+            let extent = s.dims[ax]
+            let step = s.strides[ax]
+            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
     acc
 
 // Every element in row-major order, view or not.
 fn ni_read(a: NdInt) -> [Int]
-    var out: [Int] = []
-    for o in ni_walk(a.shape, a.offset, -1)
-        out = list.push(out, a.data[o])
-    out
+    // A PACKED array's buffer, read in order from its offset, already
+    // IS its elements in row-major order — `ndshape.is_packed` says so
+    // — so the common case hands the buffer back and walks nothing.
+    if a.offset == 0 and ndshape.is_packed(a.shape) and list.len(a.data) == ndshape.size(a.shape)
+        return a.data
+    list.map(ni_walk(a.shape, a.offset, -1), o => a.data[o])
 
 // One lane per element of the reduced array: the elements a reduction
 // along `axis` folds, in the result's row-major order.
 fn ni_lanes(a: NdInt, axis: Int) -> [[Int]]
     let extent = a.shape.dims[axis]
     let step = a.shape.strides[axis]
-    var out: [[Int]] = []
-    for base in ni_walk(a.shape, a.offset, axis)
-        var lane: [Int] = []
-        var k = 0
-        while k < extent
-            lane = list.push(lane, a.data[base + k * step])
-            k = k + 1
-        out = list.push(out, lane)
-    out
+    list.map(ni_walk(a.shape, a.offset, axis),
+        base => list.map(list.range(0, extent), k => a.data[base + k * step]))
 
 // The strides that stretch `s` to `dims`, or why they do not.  A
 // stretched axis is a stride of 0; the rule is `ndshape.broadcast`'s.
@@ -1101,8 +1049,7 @@ fn ni_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
     if n < r
         return Err(NdNotBroadcastable(s.dims, dims))
     var strides: [Int] = []
-    var i = 0
-    while i < n
+    for i in 0..n
         let si = i - (n - r)
         var d = 1
         var st = 0
@@ -1115,7 +1062,6 @@ fn ni_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
             strides = list.push(strides, 0)
         else
             return Err(NdNotBroadcastable(s.dims, dims))
-        i = i + 1
     Ok(NdShape { dims: dims, strides: strides })
 
 // The strides that read `s` over `dims`, where `dims` is ALREADY a
@@ -1132,14 +1078,12 @@ fn ni_widen(s: NdShape, dims: [Int]) -> NdShape
     let r = list.len(s.dims)
     let n = list.len(dims)
     var strides: [Int] = []
-    var i = 0
-    while i < n
+    for i in 0..n
         let si = i - (n - r)
         if si >= 0 and s.dims[si] == dims[i]
             strides = list.push(strides, s.strides[si])
         else
             strides = list.push(strides, 0)
-        i = i + 1
     NdShape { dims: dims, strides: strides }
 
 // One operand stretched to a shape it is already known to reach, and
@@ -1167,11 +1111,7 @@ fn ni_zip(left: NdInt, right: NdInt, f: fn(Int, Int) -> Int) -> Result<NdInt, Nd
     match ni_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            var out: [Int] = []
-            var i = 0
-            while i < list.len(p.left)
-                out = list.push(out, f(p.left[i], p.right[i]))
-                i = i + 1
+            let out: [Int] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
             Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The broadcast comparison, once, for all six of them.
@@ -1179,11 +1119,7 @@ fn ni_compare(left: NdInt, right: NdInt, f: fn(Int, Int) -> Bool) -> Result<NdMa
     match ni_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            var out: [Bool] = []
-            var i = 0
-            while i < list.len(p.left)
-                out = list.push(out, f(p.left[i], p.right[i]))
-                i = i + 1
+            let out: [Bool] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The position of the smallest (or largest) element, FIRST on a tie.
@@ -1192,15 +1128,13 @@ fn ni_compare(left: NdInt, right: NdInt, f: fn(Int, Int) -> Bool) -> Result<NdMa
 fn ni_extreme(vals: [Int], smallest: Bool) -> Int
     var at = 0
     var best = vals[0]
-    var i = 1
-    while i < list.len(vals)
+    for i in 1..list.len(vals)
         var better = vals[i] > best
         if smallest
             better = vals[i] < best
         if better
             best = vals[i]
             at = i
-        i = i + 1
     at
 
 // The full index of a row-major position.  Only ever called on a
@@ -1209,11 +1143,9 @@ fn ni_unravel(dims: [Int], flat: Int) -> [Int]
     let s = ndshape.of_dims(dims)
     var out: [Int] = []
     var rest = flat
-    var i = 0
-    while i < list.len(dims)
+    for i in 0..list.len(dims)
         out = list.push(out, rest / s.strides[i])
         rest = rest % s.strides[i]
-        i = i + 1
     out
 
 // The operations as values `ni_zip`, `ni_compare` and `map` take.

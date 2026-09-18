@@ -47,22 +47,12 @@ fn hash(case: Int, slot: Int) -> Int
 // A shape of rank 1 to 3 with extents 1 to 4.
 fn gen_dims(case: Int) -> [Int]
     let rank = hash(case, 0) % 3 + 1
-    var dims: [Int] = []
-    var i = 0
-    while i < rank
-        dims = list.push(dims, hash(case, i + 1) % 4 + 1)
-        i = i + 1
-    dims
+    list.map(list.range(0, rank), i => hash(case, i + 1) % 4 + 1)
 
 // `n` integers in [-9, 9], which keeps every product below the
 // overflow trap even through a chain of matrix multiplies.
 fn gen_ints(case: Int, slot: Int, n: Int) -> [Int]
-    var out: [Int] = []
-    var i = 0
-    while i < n
-        out = list.push(out, hash(case, slot + i) % 19 - 9)
-        i = i + 1
-    out
+    list.map(list.range(0, n), i => hash(case, slot + i) % 19 - 9)
 
 fn product(dims: [Int]) -> Int
     var n = 1
@@ -86,16 +76,12 @@ fn mkf(data: [Float], dims: [Int]) -> NdFloat
 // `ndint` does not publish.
 fn eye_int(n: Int) -> NdInt
     var out: [Int] = []
-    var i = 0
-    while i < n
-        var j = 0
-        while j < n
+    for i in 0..n
+        for j in 0..n
             if i == j
                 out = list.push(out, 1)
             else
                 out = list.push(out, 0)
-            j = j + 1
-        i = i + 1
     mk(out, [n, n])
 
 // The full index of a row-major position, written here independently
@@ -104,16 +90,12 @@ fn eye_int(n: Int) -> NdInt
 fn unravel(dims: [Int], flat: Int) -> [Int]
     var out: [Int] = []
     var rest = flat
-    var i = 0
-    while i < list.len(dims)
+    for i in 0..list.len(dims)
         var below = 1
-        var j = i + 1
-        while j < list.len(dims)
+        for j in i + 1..list.len(dims)
             below = below * dims[j]
-            j = j + 1
         out = list.push(out, rest / below)
         rest = rest % below
-        i = i + 1
     out
 
 // ── The report a run produces ─────────────────────────────────────
@@ -125,6 +107,9 @@ struct Report
     checks: Int
     failures: Int
     digest: Int
+    // The message of the FIRST fault a law ran into, so a broken run
+    // says which operation refused rather than only how many did.
+    fault: Str
 
 fn mix(digest: Int, v: Int) -> Int
     var x = (digest * 31 + v) % 1000000007
@@ -142,20 +127,33 @@ fn mix_list(digest: Int, vs: [Int]) -> Int
 
 fn check(r: Report, held: Bool) -> Report
     if held
-        Report { cases: r.cases, checks: r.checks + 1, failures: r.failures, digest: r.digest }
+        Report { cases: r.cases, checks: r.checks + 1, failures: r.failures,
+            digest: r.digest, fault: r.fault }
     else
-        Report { cases: r.cases, checks: r.checks + 1, failures: r.failures + 1, digest: r.digest }
+        Report { cases: r.cases, checks: r.checks + 1, failures: r.failures + 1,
+            digest: r.digest, fault: r.fault }
+
+// A law that ran into a refusal rather than a wrong answer: one
+// failure, and the message kept if it is the first one.
+fn failed(r: Report, e: ndfault.NdFault) -> Report
+    var first = r.fault
+    if first == ""
+        first = e.message()
+    Report { cases: r.cases, checks: r.checks + 1, failures: r.failures + 1,
+        digest: r.digest, fault: first }
 
 fn run_laws(cases: Int) -> Report
-    var r = Report { cases: cases, checks: 0, failures: 0, digest: 7 }
-    var c = 0
-    while c < cases
+    var r = Report { cases: cases, checks: 0, failures: 0, digest: 7, fault: "" }
+    for c in 0..cases
         let dims = gen_dims(c)
         let n = product(dims)
         let rank = list.len(dims)
         let a = mk(gen_ints(c, 100, n), dims)
         let flat = ndint.to_list(a)
-        r = Report { cases: r.cases, checks: r.checks, failures: r.failures, digest: mix_list(r.digest, flat) }
+        r = Report { cases: r.cases,
+            checks: r.checks,
+            failures: r.failures,
+            digest: mix_list(r.digest, flat), fault: r.fault }
 
         // A shape describes exactly as many elements as it reads out.
         r = check(r, ndint.size(a) == n)
@@ -180,129 +178,165 @@ fn run_laws(cases: Int) -> Report
         r = check(r, ndint.size(ndint.pack(t)) == n)
 
         // `at` agrees with `to_list` at every single position.
-        var i = 0
         var at_agrees = true
-        while i < n
+        for i in 0..n
             match ndint.at(a, unravel(dims, i))
                 Ok(v)  =>
                     if v != flat[i]
                         at_agrees = false
-                Err(_) => at_agrees = false
-            i = i + 1
+                Err(_) =>
+                    at_agrees = false
         r = check(r, at_agrees)
 
         // A reduction along an axis, reduced again, is the reduction
         // over the whole array — for all three of them, on every axis.
-        var k = 0
-        while k < rank
+        for k in 0..rank
             match ndint.sum_axis(a, k)
-                Ok(s)  => r = check(r, ndint.sum(s) == ndint.sum(a))
-                Err(_) => r = check(r, false)
+                Ok(s)  =>
+                    r = check(r, ndint.sum(s) == ndint.sum(a))
+                Err(e) =>
+                    r = failed(r, e)
             match ndint.min_axis(a, k)
                 Ok(s)  =>
                     match ndint.min(s)
                         Ok(lo) =>
                             match ndint.min(a)
-                                Ok(want) => r = check(r, lo == want)
-                                Err(_)   => r = check(r, false)
-                        Err(_) => r = check(r, false)
-                Err(_) => r = check(r, false)
+                                Ok(want) =>
+                                    r = check(r, lo == want)
+                                Err(e)   =>
+                                    r = failed(r, e)
+                        Err(e) =>
+                            r = failed(r, e)
+                Err(e) =>
+                    r = failed(r, e)
             match ndint.max_axis(a, k)
                 Ok(s)  =>
                     match ndint.max(s)
                         Ok(hi) =>
                             match ndint.max(a)
-                                Ok(want) => r = check(r, hi == want)
-                                Err(_)   => r = check(r, false)
-                        Err(_) => r = check(r, false)
-                Err(_) => r = check(r, false)
+                                Ok(want) =>
+                                    r = check(r, hi == want)
+                                Err(e)   =>
+                                    r = failed(r, e)
+                        Err(e) =>
+                            r = failed(r, e)
+                Err(e) =>
+                    r = failed(r, e)
 
             // Slicing a whole axis is the array, and gathering every
             // position of an axis in order is the array.
             match ndint.slice_axis(a, k, 0, dims[k])
-                Ok(s)  => r = check(r, ndint.to_list(s) == flat)
-                Err(_) => r = check(r, false)
+                Ok(s)  =>
+                    r = check(r, ndint.to_list(s) == flat)
+                Err(e) =>
+                    r = failed(r, e)
             match ndint.arange(0, dims[k], 1)
                 Ok(idx) =>
                     match ndint.take(a, k, ndint.to_list(idx))
-                        Ok(g)  => r = check(r, ndint.to_list(g) == flat)
-                        Err(_) => r = check(r, false)
-                Err(_) => r = check(r, false)
+                        Ok(g)  =>
+                            r = check(r, ndint.to_list(g) == flat)
+                        Err(e) =>
+                            r = failed(r, e)
+                Err(e)  =>
+                    r = failed(r, e)
 
             // Indexing every position along an axis and reading the
             // slices back covers the array exactly once.
             var got = 0
-            var pos = 0
-            while pos < dims[k]
+            for pos in 0..dims[k]
                 match ndint.index_axis(a, k, pos)
-                    Ok(row) => got = got + ndint.size(row)
-                    Err(_)  => r = check(r, false)
-                pos = pos + 1
+                    Ok(row) =>
+                        got = got + ndint.size(row)
+                    Err(e)  =>
+                        r = failed(r, e)
             r = check(r, got == n)
-            k = k + 1
 
         // Swapping two axes twice is the array back.
         match ndint.swap_axes(a, 0, rank - 1)
             Ok(s1) =>
                 match ndint.swap_axes(s1, 0, rank - 1)
-                    Ok(s2) => r = check(r, ndint.to_list(s2) == flat)
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                    Ok(s2) =>
+                        r = check(r, ndint.to_list(s2) == flat)
+                    Err(e) =>
+                        r = failed(r, e)
+            Err(e) =>
+                r = failed(r, e)
 
         // Flattening and re-shaping is the array back.
         match ndint.reshape(a, [n])
             Ok(line) =>
                 r = check(r, ndint.to_list(line) == flat)
                 match ndint.reshape(line, dims)
-                    Ok(back) => r = check(r, ndint.to_list(back) == flat)
-                    Err(_)   => r = check(r, false)
-            Err(_) => r = check(r, false)
+                    Ok(back) =>
+                        r = check(r, ndint.to_list(back) == flat)
+                    Err(e)   =>
+                        r = failed(r, e)
+            Err(e)   =>
+                r = failed(r, e)
 
         // Addition commutes, subtracting an array from itself is zero,
         // and negating twice is the array back.
         match ndint.add(a, a)
-            Ok(d) =>
+            Ok(d)  =>
                 match ndint.add(a, a)
-                    Ok(d2) => r = check(r, ndint.to_list(d) == ndint.to_list(d2))
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                    Ok(d2) =>
+                        r = check(r, ndint.to_list(d) == ndint.to_list(d2))
+                    Err(e) =>
+                        r = failed(r, e)
+            Err(e) =>
+                r = failed(r, e)
         match ndint.sub(a, a)
-            Ok(z)  => r = check(r, ndint.sum(z) == 0)
-            Err(_) => r = check(r, false)
+            Ok(z)  =>
+                r = check(r, ndint.sum(z) == 0)
+            Err(e) =>
+                r = failed(r, e)
         r = check(r, ndint.to_list(ndint.neg(ndint.neg(a))) == flat)
         match ndint.mul(a, ndint.scalar(1))
-            Ok(m)  => r = check(r, ndint.to_list(m) == flat)
-            Err(_) => r = check(r, false)
+            Ok(m)  =>
+                r = check(r, ndint.to_list(m) == flat)
+            Err(e) =>
+                r = failed(r, e)
 
         // A scalar on the left and on the right give the same answer,
         // which is what "a rank-0 array broadcasts against everything"
         // has to mean.
         match ndint.add(a, ndint.scalar(5))
-            Ok(l) =>
+            Ok(l)  =>
                 match ndint.add(ndint.scalar(5), a)
-                    Ok(rr) => r = check(r, ndint.to_list(l) == ndint.to_list(rr))
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                    Ok(rr) =>
+                        r = check(r, ndint.to_list(l) == ndint.to_list(rr))
+                    Err(e) =>
+                        r = failed(r, e)
+            Err(e) =>
+                r = failed(r, e)
 
         // The extreme and its position agree.
         match ndint.argmax(a)
             Ok(idx) =>
                 match ndint.at(a, idx)
-                    Ok(v) =>
+                    Ok(v)  =>
                         match ndint.max(a)
-                            Ok(want) => r = check(r, v == want)
-                            Err(_)   => r = check(r, false)
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                            Ok(want) =>
+                                r = check(r, v == want)
+                            Err(e)   =>
+                                r = failed(r, e)
+                    Err(e) =>
+                        r = failed(r, e)
+            Err(e)  =>
+                r = failed(r, e)
         match ndint.argmin(a)
             Ok(idx) =>
                 match ndint.at(a, idx)
-                    Ok(v) =>
+                    Ok(v)  =>
                         match ndint.min(a)
-                            Ok(want) => r = check(r, v == want)
-                            Err(_)   => r = check(r, false)
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                            Ok(want) =>
+                                r = check(r, v == want)
+                            Err(e)   =>
+                                r = failed(r, e)
+                    Err(e) =>
+                        r = failed(r, e)
+            Err(e)  =>
+                r = failed(r, e)
 
         // A predicate and its negation partition the array, and a
         // selection is exactly as long as the mask's count.
@@ -312,20 +346,27 @@ fn run_laws(cases: Int) -> Report
                     Ok(lo) =>
                         r = check(r, ndbool.count(hi) + ndbool.count(lo) == n)
                         match ndbool.either(hi, lo)
-                            Ok(all) => r = check(r, ndbool.all(all))
-                            Err(_)  => r = check(r, false)
+                            Ok(all) =>
+                                r = check(r, ndbool.all(all))
+                            Err(e)  =>
+                                r = failed(r, e)
                         match ndbool.both(hi, lo)
-                            Ok(none) => r = check(r, ndbool.any(none) == false)
-                            Err(_)   => r = check(r, false)
+                            Ok(none) =>
+                                r = check(r, ndbool.any(none) == false)
+                            Err(e)   =>
+                                r = failed(r, e)
                         r = check(r, ndbool.count(ndbool.invert(hi)) == ndbool.count(lo))
-                    Err(_) => r = check(r, false)
+                    Err(e) =>
+                        r = failed(r, e)
                 match ndint.select(a, hi)
                     Ok(kept) =>
                         r = check(r, ndint.size(kept) == ndbool.count(hi))
                         r = check(r, ndint.rank(kept) == 1)
-                    Err(_) => r = check(r, false)
+                    Err(e)   =>
+                        r = failed(r, e)
                 r = check(r, ndbool.count(ndbool.of_int(ndbool.to_int(hi))) == ndbool.count(hi))
-            Err(_) => r = check(r, false)
+            Err(e) =>
+                r = failed(r, e)
 
         // Widening to Float and truncating back is the array it was.
         let asf = ndint.to_float(a)
@@ -333,28 +374,35 @@ fn run_laws(cases: Int) -> Report
         r = check(r, ndfloat.sum(asf) == int.to_float(ndint.sum(a)))
         r = check(r, ndfloat.to_list(ndfloat.neg(ndfloat.neg(asf))) == ndfloat.to_list(asf))
         match ndfloat.sub(asf, asf)
-            Ok(z)  => r = check(r, ndfloat.sum(z) == 0.0)
-            Err(_) => r = check(r, false)
+            Ok(z)  =>
+                r = check(r, ndfloat.sum(z) == 0.0)
+            Err(e) =>
+                r = failed(r, e)
         // The mean lies between the smallest and the largest element —
         // a law that survives rounding, where "mean times count is the
         // sum" would not.
         match ndfloat.mean(asf)
-            Ok(m) =>
+            Ok(m)  =>
                 match ndfloat.min(asf)
                     Ok(lo) =>
                         match ndfloat.max(asf)
-                            Ok(hi) => r = check(r, lo <= m and m <= hi)
-                            Err(_) => r = check(r, false)
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                            Ok(hi) =>
+                                r = check(r, lo <= m and m <= hi)
+                            Err(e) =>
+                                r = failed(r, e)
+                    Err(e) =>
+                        r = failed(r, e)
+            Err(e) =>
+                r = failed(r, e)
 
         // Stretching along a new outermost axis reads the array twice.
         match ndint.broadcast_to(a, list.append([2], dims))
-            Ok(b) =>
+            Ok(b)  =>
                 r = check(r, ndint.size(b) == 2 * n)
                 r = check(r, ndint.to_list(b) == list.append(flat, flat))
                 r = check(r, list.len(b.data) == list.len(a.data))
-            Err(_) => r = check(r, false)
+            Err(e) =>
+                r = failed(r, e)
 
         // The matrix laws, on a rank-2 pair built for this case.
         let rows = hash(c, 50) % 4 + 1
@@ -363,65 +411,78 @@ fn run_laws(cases: Int) -> Report
         let m1 = mk(gen_ints(c, 300, rows * inner), [rows, inner])
         let m2 = mk(gen_ints(c, 400, inner * cols), [inner, cols])
         r = Report { cases: r.cases, checks: r.checks, failures: r.failures,
-            digest: mix_list(mix_list(r.digest, ndint.to_list(m1)), ndint.to_list(m2)) }
+            digest: mix_list(mix_list(r.digest, ndint.to_list(m1)), ndint.to_list(m2)), fault: r.fault }
 
         // The identity is the unit on both sides.
         match ndint.matmul(m1, eye_int(inner))
-            Ok(p1) => r = check(r, ndint.to_list(p1) == ndint.to_list(m1))
-            Err(_) => r = check(r, false)
+            Ok(p1) =>
+                r = check(r, ndint.to_list(p1) == ndint.to_list(m1))
+            Err(e) =>
+                r = failed(r, e)
         match ndint.matmul(eye_int(rows), m1)
-            Ok(p2) => r = check(r, ndint.to_list(p2) == ndint.to_list(m1))
-            Err(_) => r = check(r, false)
+            Ok(p2) =>
+                r = check(r, ndint.to_list(p2) == ndint.to_list(m1))
+            Err(e) =>
+                r = failed(r, e)
 
         // (AB)^T is B^T A^T — the law that catches a transposed view
         // being read the wrong way round.
         match ndint.matmul(m1, m2)
             Ok(ab) =>
                 r = Report { cases: r.cases, checks: r.checks, failures: r.failures,
-                    digest: mix_list(r.digest, ndint.to_list(ab)) }
+                    digest: mix_list(r.digest, ndint.to_list(ab)), fault: r.fault }
                 r = check(r, ndint.shape(ab).dims == [rows, cols])
                 match ndint.matmul(ndint.transpose(m2), ndint.transpose(m1))
                     Ok(ba) =>
                         r = check(r, ndint.to_list(ndint.transpose(ab)) == ndint.to_list(ba))
                         r = check(r, ndint.shape(ba).dims == [cols, rows])
-                    Err(_) => r = check(r, false)
+                    Err(e) =>
+                        r = failed(r, e)
 
                 // A matrix times a vector is the matrix-vector product
                 // one column at a time.
                 match ndint.of_list(gen_ints(c, 500, cols), [cols])
-                    Ok(v) =>
+                    Ok(v)  =>
                         match ndint.matmul(ab, v)
                             Ok(mv) =>
                                 r = check(r, ndint.rank(mv) == 1)
                                 r = check(r, ndint.size(mv) == rows)
-                                var row = 0
                                 var mv_agrees = true
-                                while row < rows
+                                for row in 0..rows
                                     match ndint.index_axis(ab, 0, row)
                                         Ok(one) =>
                                             match ndint.dot(one, v)
-                                                Ok(d) =>
+                                                Ok(d)  =>
                                                     match ndint.at(mv, [row])
                                                         Ok(got2) =>
                                                             if got2 != d
                                                                 mv_agrees = false
-                                                        Err(_) => mv_agrees = false
-                                                Err(_) => mv_agrees = false
-                                        Err(_) => mv_agrees = false
-                                    row = row + 1
+                                                        Err(_)   =>
+                                                            mv_agrees = false
+                                                Err(_) =>
+                                                    mv_agrees = false
+                                        Err(_)  =>
+                                            mv_agrees = false
                                 r = check(r, mv_agrees)
-                            Err(_) => r = check(r, false)
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                            Err(e) =>
+                                r = failed(r, e)
+                    Err(e) =>
+                        r = failed(r, e)
+
+            Err(e) =>
+                r = failed(r, e)
 
         // The same product read through Float agrees element for
         // element, because every operand is a small whole number.
         match ndfloat.matmul(ndint.to_float(m1), ndint.to_float(m2))
             Ok(fab) =>
                 match ndint.matmul(m1, m2)
-                    Ok(iab) => r = check(r, ndint.to_list(ndfloat.to_int(fab)) == ndint.to_list(iab))
-                    Err(_)  => r = check(r, false)
-            Err(_) => r = check(r, false)
+                    Ok(iab) =>
+                        r = check(r, ndint.to_list(ndfloat.to_int(fab)) == ndint.to_list(iab))
+                    Err(e)  =>
+                        r = failed(r, e)
+            Err(e)  =>
+                r = failed(r, e)
 
         // And `where` on a mask of the same shape is `select`'s
         // shape-preserving twin: it keeps exactly the marked elements.
@@ -431,20 +492,26 @@ fn run_laws(cases: Int) -> Report
                 match ndfloat.where(mask, ff, ndfloat.scalar(0.0))
                     Ok(cleaned) =>
                         match ndfloat.gt(cleaned, ndfloat.scalar(0.0))
-                            Ok(again) => r = check(r, ndbool.count(again) == ndbool.count(mask))
-                            Err(_)    => r = check(r, false)
+                            Ok(again) =>
+                                r = check(r, ndbool.count(again) == ndbool.count(mask))
+                            Err(e)    =>
+                                r = failed(r, e)
                         r = check(r, ndfloat.shape(cleaned).dims == [rows, inner])
-                    Err(_) => r = check(r, false)
-            Err(_) => r = check(r, false)
+                    Err(e)      =>
+                        r = failed(r, e)
+            Err(e)   =>
+                r = failed(r, e)
 
-        c = c + 1
     r
 
 // The digest of 200 cases, which is what the two legs have to agree
 // on.  A change to the generator changes it; a change to an ANSWER
 // changes it too, which is the point.
 fn digest_line(r: Report) -> Str
-    "ndarray-nv properties: ${r.cases} case(s), ${r.checks} check(s), ${r.failures} failure(s), digest ${r.digest}"
+    var tail = ""
+    if r.fault != ""
+        tail = ", first fault: ${r.fault}"
+    "ndarray-nv properties: ${r.cases} case(s), ${r.checks} check(s), ${r.failures} failure(s), digest ${r.digest}${tail}"
 
 @test
 fn test_the_laws_hold_over_two_hundred_generated_shapes() [io]
