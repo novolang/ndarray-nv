@@ -1,16 +1,16 @@
 [package]
 name        = "ndarray-nv"
-version     = "0.0.2"
+version     = "0.1.0"
 description = "N-dimensional arrays of Float and of Int over a flat buffer, with a shape, strides and an offset: construction, reshape, transpose, slicing along an axis, broadcast arithmetic and comparison, reductions along an axis and over the whole array, and matrix multiply.  A view costs nothing because the buffer is a value, so a transpose never copies."
 
 license     = "Apache-2.0"
 
-# An INTERFACE release: every `pub fn` body is a `todo()`, so the
-# signatures and the effect rows are published and nothing is
-# implemented.  `novo pkg publish` recognises the shape and requires
-# both the draft stability and the 0.0.x version; the first
-# implementation is the 0.1.0 published over it.
-stability   = "draft"
+# The first IMPLEMENTED release: every `pub fn` published as 0.0.1 and
+# 0.0.2 now has a body, no `todo()` remains under `src/`, and the
+# signatures are the ones that were published.  `experimental` because
+# the surface may still move between 0.1.x releases; what it will not
+# do is move silently, and a CHANGELOG heading says so when it does.
+stability   = "experimental"
 
 # `core`, and it costs nothing to stay there: an array is a list of
 # numbers, a shape is a list of integers, and every function here is
@@ -29,6 +29,11 @@ novo        = ">= 0.8.9"
 
 # A library: no `main`, so `novo pkg build` type-checks and
 # effect-checks every module under `src/` and writes no binary.
+#
+# The floor stays at 0.8.9, which is the toolchain the interface
+# declared: the bodies were built and their suites run against 0.8.9
+# as well as against 0.9.1, so nothing here raises the bar for the
+# packages that already depend on this one.
 
 [docs.pages]
 "README.md" = "N-dimensional arrays of Float and of Int"

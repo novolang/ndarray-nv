@@ -10,20 +10,31 @@ operation means, and the Rust crate
 [ndarray](https://docs.rs/ndarray) for the layout that makes a transpose
 free.
 
-Four other packages on the registry are defined over these arrays:
+Eight other packages on the registry are defined over these arrays:
 [linalg-nv](https://novo-lang.org/packages/linalg-nv) (matrix
 decompositions), [stats-nv](https://novo-lang.org/packages/stats-nv)
 (summaries, distributions and hypothesis tests),
 [fft-nv](https://novo-lang.org/packages/fft-nv) (two-dimensional Fourier
-transforms) and
+transforms), [cluster-nv](https://novo-lang.org/packages/cluster-nv)
+(k-means, DBSCAN and agglomerative clustering),
+[embeddings-nv](https://novo-lang.org/packages/embeddings-nv) (vector
+arithmetic over a token-embedding matrix),
+[interpolate-nv](https://novo-lang.org/packages/interpolate-nv)
+(interpolation over a regular grid),
+[plot-nv](https://novo-lang.org/packages/plot-nv) (charts), and
 [dataframe-nv](https://novo-lang.org/packages/dataframe-nv), whose
 numeric columns convert to and from them.
 
-**Status: NOT IMPLEMENTED — interface only.** Every function is declared
-with its full signature, but every body is a `todo()` that panics when
-called. The package is published so its design can be reviewed and
-depended on before it is implemented. Version 0.1.0 will be the first
-working release.
+**Status: implemented, and experimental.** Version 0.1.0 is the first
+working release: every function published as an interface in 0.0.1 and
+0.0.2 now has a body, and every signature is the one that was
+published. The package is marked experimental because the surface may
+still change between 0.1.x releases. A change that breaks a caller will
+be named under a "Breaking" heading in the CHANGELOG.
+
+Everything the interface declared is implemented. What is not here is
+listed under "What is not included", and none of it is a stub: a
+function that is absent is absent, not present and broken.
 
 ## What an N-dimensional array is here
 
@@ -98,13 +109,7 @@ fn main() [io]
                 Ok(m)  => println("${ndbool.count(m)} elements are above 3.0")
 ```
 
-Build and test with `novo pkg build` and `novo test`. Today `novo test`
-fails on purpose: every test reaches a
-`not implemented: ndarray-nv.<module>.<fn>` panic. The tests are the
-specification the implementation will have to satisfy.
-
-`novo test --isolate` gives each test its own process, so the output
-names the function each one stopped at.
+Build and test with `novo pkg build` and `novo test tests/`.
 
 ## What the package contains
 
@@ -245,52 +250,98 @@ the dims and strides off one it has.
 ## Tests
 
 ```bash
-novo test tests/ndshape_tests.nv      # 11 tests: the layout and the broadcasting rule
+novo test tests/ndshape_tests.nv      # 10 tests: the layout and the broadcasting rule
 novo test tests/ndbool_tests.nv       #  7 tests: the mask
-novo test tests/ndfloat_tests.nv      # 24 tests: the array of Float
+novo test tests/ndfloat_tests.nv      # 23 tests: the array of Float
 novo test tests/ndint_tests.nv        # 11 tests: the array of Int
+novo test tests/semantics_tests.nv    # 19 tests: the numbers, against NumPy
+novo test tests/coverage_tests.nv     # 10 tests: every line of src/
+novo test tests/property_tests.nv     #  1 test:  the laws, over 200 shapes
 ```
 
-The expected answers are NumPy's, for every behaviour this package
-borrows: the right-aligned broadcasting rule, the half-open `arange` and
-the closed `linspace`, the first position on an `argmax` tie, `matmul`
-promoting and then dropping a rank-1 axis, and the transpose of a rank-1
-array being that array. NumPy's own test suite is the oracle the
-implementation will be run against.
+The first four suites were published with the interface and are
+unchanged. They say what the shape of each answer is: that a transpose
+does not copy, that a broadcast refusal names both shapes, that a
+reduction drops its axis, that an empty reduction is refused rather
+than answering zero, that a negative axis is refused, and that the four
+documented differences between `ndfloat` and `ndint` hold.
 
-Every fixture is written out by hand rather than built by a constructor,
-so a test says what an operation owes a caller before any constructor
-exists. The suite asserts that a transpose does not copy, that a
-broadcast refusal names both shapes, that a reduction drops its axis,
-that an empty reduction is refused rather than answering zero, that a
-negative axis is refused, and that the four documented differences
-between `ndfloat` and `ndint` hold.
+`semantics_tests.nv` says what the numbers are. Its expected answers
+are NumPy's, taken from NumPy's own documentation where NumPy prints
+them: the broadcasting table from the broadcasting page, `arange` and
+`linspace` as the reference manual shows them, the first position on an
+`argmax` tie, NaN propagating through `sum` and `mean` and being skipped
+by `min` and `max`, and `matmul` promoting a rank-1 operand and then
+dropping the promoted axis. The five places this package departs from
+NumPy each have a case that asserts the departure.
 
-The tests compile today and fail at run, each on the
-`not implemented: ndarray-nv.<module>.<fn>` panic that is its body. That
-is the expected state of an interface release. They turn green one at a
-time as bodies land.
+`coverage_tests.nv` reaches every line of `src/`. Measured with
+`novo test tests/coverage_tests.nv --cov`, it executes 1030 of 1030
+source lines and reaches all 184 functions. No line is excused with a
+`// cov: skip` marker.
+
+`property_tests.nv` checks laws rather than vectors: that packing an
+array does not change what it reads, that transposing twice is the
+array back, that `at` agrees with `to_list` at every position, that a
+reduction along each axis reduced again is the reduction over the whole
+array, that gathering every position of an axis in order is the array,
+and that the transpose of a matrix product is the product of the
+transposes in the other order. It runs 12000 such checks over 200
+shapes built from the case number rather than from a random source, so
+every run is the same run. It is also a program, and
+
+```bash
+novo run tests/property_tests.nv
+novo run tests/property_tests.nv --interp
+```
+
+print the same line from the compiled and the interpreted backend.
+
+`tests/bench_matmul.nv` is a program, not a test. It times twenty
+64-by-64 matrix multiplies and prints the per-multiply figure, so a
+later release has something to compare against.
+
+**One published assertion is red on this toolchain, and the package is
+not the reason.** In `tests/ndfloat_tests.nv`, the case "gt is the one
+a notebook writes" compares a list of truths against a list literal.
+On novo-lang 0.9.1 a `[Bool] == [Bool]` comparison answers false for
+equal lists whenever a list of `Float` was bound earlier in the same
+function, on both the compiled and the interpreted backend. The mask
+the test builds is correct and printing it shows the right values; the
+comparison is what is wrong. The defect is filed against the toolchain.
+Running that suite with `novo test tests/ndfloat_tests.nv --isolate`
+gives every test its own process and all 23 pass.
 
 ## Implementation status
 
+Every declaration below is implemented.
+
 | Item | Implemented |
 | --- | --- |
-| `ndshape.NdShape`, `ndbool.NdMask`, `ndfloat.NdFloat`, `ndint.NdInt`, `ndfault.NdFault` | declared |
-| `ndshape.of_dims`, `.scalar`, `.rank`, `.size`, `.is_packed`, `.fits` | no |
-| `ndshape.flat_index`, `.broadcast`, `.swap_axes`, `.reverse_axes`, `.drop_axis` | no |
-| `ndfault`'s nine variants and its `Error` implementation | no |
-| `ndbool.of_list`, `.filled`, `.shape`, `.size`, `.at`, `.to_list` | no |
-| `ndbool.all`, `.any`, `.count`, `.count_axis`, `.both`, `.either`, `.invert` | no |
-| `ndbool.swap_axes`, `.pack`, `.to_int`, `.of_int` | no |
-| `ndfloat.of_list`, `.scalar`, `.zeros`, `.ones`, `.filled`, `.arange`, `.linspace`, `.eye` | no |
-| `ndfloat.shape`, `.rank`, `.size`, `.at`, `.with`, `.to_list` | no |
-| `ndfloat.reshape`, `.transpose`, `.swap_axes`, `.slice_axis`, `.index_axis`, `.broadcast_to`, `.pack` | no |
-| `ndfloat.add`, `.sub`, `.mul`, `.div`, `.pow`, `.neg`, `.abs`, `.sqrt`, `.exp`, `.ln`, `.map` | no |
-| `ndfloat.eq`, `.ne`, `.lt`, `.le`, `.gt`, `.ge`, `.select`, `.where` | no |
-| `ndfloat.sum`, `.mean`, `.min`, `.max`, `.argmin`, `.argmax` | no |
-| `ndfloat.sum_axis`, `.mean_axis`, `.min_axis`, `.max_axis`, `.argmin_axis`, `.argmax_axis` | no |
-| `ndfloat.dot`, `.matmul`, `.to_int` | no |
-| `ndint`'s forty-six functions, mirroring `ndfloat` and adding `.rem`, `.take`, `.to_float` | no |
+| `ndshape.NdShape`, `ndbool.NdMask`, `ndfloat.NdFloat`, `ndint.NdInt`, `ndfault.NdFault` | yes |
+| `ndshape.of_dims`, `.scalar`, `.rank`, `.size`, `.is_packed`, `.fits` | yes |
+| `ndshape.flat_index`, `.broadcast`, `.swap_axes`, `.reverse_axes`, `.drop_axis` | yes |
+| `ndfault`'s nine variants and its `Error` implementation | yes |
+| `ndbool.of_list`, `.filled`, `.shape`, `.size`, `.at`, `.to_list` | yes |
+| `ndbool.all`, `.any`, `.count`, `.count_axis`, `.both`, `.either`, `.invert` | yes |
+| `ndbool.swap_axes`, `.pack`, `.to_int`, `.of_int` | yes |
+| `ndfloat.of_list`, `.scalar`, `.zeros`, `.ones`, `.filled`, `.arange`, `.linspace`, `.eye` | yes |
+| `ndfloat.shape`, `.rank`, `.size`, `.at`, `.with`, `.to_list` | yes |
+| `ndfloat.reshape`, `.transpose`, `.swap_axes`, `.slice_axis`, `.index_axis`, `.broadcast_to`, `.pack` | yes |
+| `ndfloat.add`, `.sub`, `.mul`, `.div`, `.pow`, `.neg`, `.abs`, `.sqrt`, `.exp`, `.ln`, `.map` | yes |
+| `ndfloat.eq`, `.ne`, `.lt`, `.le`, `.gt`, `.ge`, `.select`, `.where` | yes |
+| `ndfloat.sum`, `.mean`, `.min`, `.max`, `.argmin`, `.argmax` | yes |
+| `ndfloat.sum_axis`, `.mean_axis`, `.min_axis`, `.max_axis`, `.argmin_axis`, `.argmax_axis` | yes |
+| `ndfloat.dot`, `.matmul`, `.to_int` | yes |
+| `ndint`'s forty-six functions, mirroring `ndfloat` and adding `.rem`, `.take`, `.to_float` | yes |
+
+Two answers this release fixes that the interface left open, both
+stated here because a caller can see the difference:
+
+| Question the interface did not answer | This release |
+| --- | --- |
+| What do `argmin` and `argmax` do with a NaN? | They skip it, the way `min` and `max` do, so `at(a, argmin(a))` is always `min(a)`. NumPy's `argmin` propagates the NaN instead. |
+| What does `min` answer for an array that is nothing but NaN? | A NaN, and `argmin` answers position zero. The array is not empty, so there is nothing to refuse. |
 
 ## Licence
 
