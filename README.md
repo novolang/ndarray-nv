@@ -109,7 +109,8 @@ fn main() [io]
                 Ok(m)  => println("${ndbool.count(m)} elements are above 3.0")
 ```
 
-Build and test with `novo pkg build` and `novo test tests/`.
+Build with `novo pkg build`, and run a suite with `novo test
+tests/<name>_tests.nv`. The suites are listed under "Tests".
 
 ## What the package contains
 
@@ -178,7 +179,10 @@ the dims and strides off one it has.
 8. **`min` and `max` skip NaN.** They behave as NumPy's `nanmin` and
    `nanmax`, not as its `min` and `max`.
 9. **`argmin` and `argmax` answer the first position on a tie.** This
-   follows NumPy.
+   follows NumPy. They also skip NaN, the way `min` and `max` do, so
+   `at(a, argmin(a))` is always `min(a)`. NumPy's `argmin` propagates
+   the NaN instead. An array that is nothing but NaN answers position
+   zero.
 10. **`arange` excludes its stop value and `linspace` includes it.** A
     `linspace`'s last element is exactly the stop value. This follows
     NumPy.
