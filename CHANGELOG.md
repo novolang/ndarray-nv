@@ -68,18 +68,18 @@ signature, and both are visible to a caller, so both are written down.
 
 ### Known
 
-- **One published test assertion is red on novo-lang 0.9.1, and the
-  package is not the cause.** In `tests/ndfloat_tests.nv`, the case "gt
-  is the one a notebook writes" compares a list of truths against a
-  list literal. On this toolchain `[Bool] == [Bool]` answers false for
-  equal lists whenever a list of `Float` was bound earlier in the same
-  function, on the compiled and the interpreted backend alike. The mask
-  is correct and printing it shows the right values; the comparison is
-  what is wrong. Filed against the toolchain as
-  `cross-backend/bool-list-equality-answers-false-after-a-float-list-in-the-same-function`.
-  The suite passes under `novo test tests/ndfloat_tests.nv --isolate`,
-  which gives every test its own process. No workaround was written
-  into this package.
+- **A toolchain defect was found on the way here and is fixed.** On
+  novo-lang 0.9.1, `[Bool] == [Bool]` answers false for equal lists
+  whenever a list of `Float` was bound earlier in the same function, on
+  the compiled and the interpreted backend alike — a Bool box was
+  written as a full cell and read as its first byte. Three lines
+  reproduce it with no package at all: `let d = [1.0]` followed by
+  `println("${[true] == [true]}")` prints `false`. The case "gt is the
+  one a notebook writes" in `tests/ndfloat_tests.nv` is written that
+  way and was red for most of this release's development. Nothing here
+  works around it. Filed as
+  `cross-backend/bool-list-equality-answers-false-after-a-float-list-in-the-same-function`
+  and fixed in the toolchain after 0.9.1.
 - **`ndbool` has no `broadcast_to`**, so a mask cannot be stretched to
   a shape by a caller. `both`, `either` and `ndfloat.where` stretch it
   internally. This was true of the interface and is unchanged.

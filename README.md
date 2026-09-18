@@ -307,16 +307,23 @@ per-multiply figure, so a later release has something to compare
 against. On the machine this release was built on a 64-by-64
 `ndfloat.matmul` takes 0.59 ms and an `ndint.matmul` 0.32 ms.
 
-**One published assertion is red on this toolchain, and the package is
-not the reason.** In `tests/ndfloat_tests.nv`, the case "gt is the one
-a notebook writes" compares a list of truths against a list literal.
-On novo-lang 0.9.1 a `[Bool] == [Bool]` comparison answers false for
-equal lists whenever a list of `Float` was bound earlier in the same
-function, on both the compiled and the interpreted backend. The mask
-the test builds is correct and printing it shows the right values; the
-comparison is what is wrong. The defect is filed against the toolchain.
-Running that suite with `novo test tests/ndfloat_tests.nv --isolate`
-gives every test its own process and all 23 pass.
+**All seven suites pass.** One of them met a toolchain defect on the
+way here, and it is worth knowing about because it is invisible: on
+novo-lang 0.9.1 a `[Bool] == [Bool]` comparison answers false for equal
+lists whenever a list of `Float` was bound earlier in the same
+function, on the compiled and the interpreted backend alike. Three
+lines reproduce it with no package at all:
+
+```novo
+fn main() [io]
+    let d = [1.0]
+    println("${[true] == [true]}")      // false on 0.9.1
+```
+
+The case "gt is the one a notebook writes" in `tests/ndfloat_tests.nv`
+is written that way and was red for most of this release's
+development. Nothing in this package works around it. It is fixed in
+the toolchain, in a release after 0.9.1.
 
 ## Implementation status
 
