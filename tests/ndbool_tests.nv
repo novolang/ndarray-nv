@@ -1,10 +1,7 @@
 // ndbool_tests.nv — the API suite for the mask.
 //
-// RED ON PURPOSE: every body is a `todo()`, so each assertion reaches
-// `not implemented: ndarray-nv.ndbool.<fn>`.
-//
 // The two cases worth reading before the rest are the empty-mask
-// answers for `all` and `any`, which are the ones a reader is most
+// answers for `all` and `any`.  They are the ones a reader is most
 // likely to disagree with, and the reasoning is in the doc comments.
 
 use std.test

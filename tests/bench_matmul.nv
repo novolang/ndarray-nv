@@ -1,25 +1,26 @@
 // bench_matmul.nv — the one number the next release is measured
 // against.
 //
-// Performance is not this release's deliverable; correctness and the
-// published semantics are.  This file exists so that the release
-// AFTER it has something to compare to, because a package with no
-// baseline cannot tell an optimisation from a regression.
+// What this package delivers is correctness and the published
+// semantics, not speed.  This file exists so that the next release has
+// something to compare against, because a package with no baseline
+// cannot tell an optimisation from a regression.
 //
-// 64-by-64 is the size chosen: big enough that the 262,144
+// The size is 64-by-64.  That is big enough that the 262,144
 // multiply-adds dominate the two buffer reads and the result's
-// allocation, small enough to run in a second on the interpreter too.
+// allocation, and small enough to run in a second on the interpreter
+// too.
 //
-// It is a PROGRAM and not a `@test`.  A wall-clock assertion is a
-// test that fails on a loaded build machine and tells nobody
-// anything, so this prints a number and the reader decides.  `novo
-// test` never runs it — the file is not named `*_tests.nv` — and
-// `matmul` itself is asserted in three suites that are.
+// This is a program and not a `@test`.  A wall-clock assertion fails
+// on a loaded build machine and tells nobody anything, so this prints
+// a number and the reader decides.  `novo test` never runs it, because
+// the file is not named `*_tests.nv`, and `matmul` itself is asserted
+// in three suites that are.
 //
 //     novo run tests/bench_matmul.nv
 //     novo run tests/bench_matmul.nv --interp
 //
-// `bench.black_box_float` is what keeps the answer alive: without it
+// `bench.black_box_float` is what keeps the answer alive.  Without it
 // LLVM can see that nothing reads the products and delete the loop,
 // and the benchmark then measures an empty loop very accurately.
 
@@ -32,7 +33,7 @@ use ndint
 use ndbool
 
 // What an operation could not do, said in one line.  `ndfault` is the
-// package's one error type and every module answers with it.
+// package's one error type, and every module answers with it.
 fn say(e: ndfault.NdFault) -> Str
     e.message()
 
@@ -62,8 +63,8 @@ fn main() [io, time]
     println("ndarray-nv matmul baseline — two ${ndshape.size(ndfloat.shape(a))}-element operands, shape ${ndfloat.shape(a).dims}")
 
     // One multiply before the clock starts, so the first run's
-    // allocation growth is not counted as the cost of the loop, and
-    // so the answer is looked at once before it is only summed.
+    // allocation growth is not counted as the cost of the loop, and so
+    // the answer is read once before it is only summed.
     var sink = 0.0
     match ndfloat.matmul(a, b)
         Ok(p)  =>

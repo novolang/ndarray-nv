@@ -1,50 +1,47 @@
-// ndfloat.nv — the N-dimensional array of Float, which is the one a
-// notebook spends its day in.
+// ndfloat.nv — the N-dimensional array of Float, which is the one most
+// programs spend their time in.
 //
-// WHY THERE IS NO `NdArray<T>`, AND WHY THIS PACKAGE PUBLISHES TWO
-// CONCRETE TYPES INSTEAD.  It was measured, not assumed.  A generic
-// container and a generic function over it compile and run perfectly
-// well inside ONE module.  Called from a SECOND module they do not: a
-// generic call answering with the generic struct stops the compiler
-// with E6000, one answering with a plain Int lowers its result as a
-// pointer and fails IR verification, and annotating the destination
-// rescues neither.  A library is nothing BUT a module boundary, so a
-// generic array here would be a type nobody outside the package could
-// call.  Two concrete arrays that work are worth more than one generic
-// array that does not.
+// The package publishes two concrete array types rather than one
+// `NdArray<T>`, and the reason was measured.  A generic container and a
+// generic function over it compile and run inside one module.  Called
+// from a second module they do not.  A generic call answering with the
+// generic struct stops the compiler with E6000.  One answering with a
+// plain Int lowers its result as a pointer and fails IR verification.
+// Annotating the destination rescues neither.  A library is nothing
+// but a module boundary, so a generic array here would be a type
+// nobody outside the package could call.
 //
 // The eventual answer is still one type, and nothing in this surface
-// would have to move to reach it: `NdFloat` and `NdInt` carry the same
-// members in the same order and name the same functions in the same
-// order, so they collapse into `NdArray<T>` by deletion rather than by
-// redesign.  The README's "The load-bearing interface" section carries
-// the measurement in full.
+// would have to move to reach it.  `NdFloat` and `NdInt` carry the
+// same members in the same order and name the same functions in the
+// same order, so they collapse into `NdArray<T>` by deletion rather
+// than by redesign.  The README says so under "What is not included".
 //
-// WHY THE BUFFER IS `[Float]` AND NOT `std.array`'s `ArrayF64`.  Every
+// The buffer is `[Float]` rather than `std.array`'s `ArrayF64`.  Every
 // method on `ArrayF64` is `[io]`, because it is a handle over an FFI
 // allocation and reading a cell is a call out.  A `core` package may
-// not spend an effect to read its own element, so a flat `[Float]` —
-// which the compiler already unboxes — is the buffer, and an
-// implementation that wants the FFI array back can have it the day
-// `std.array` is spellable without `[io]`.
+// not spend an effect to read its own element, so the buffer is a flat
+// `[Float]`, which the compiler already unboxes.  The FFI array can
+// come back the day `std.array` is spellable without `[io]`.
 //
-// WHY THERE IS NO `add_scalar` BESIDE `add`.  `scalar(3.0)` is a
-// rank-0 array, and a rank-0 array broadcasts against everything, so
+// There is no `add_scalar` beside `add`.  `scalar(3.0)` is a rank-0
+// array, and a rank-0 array broadcasts against everything, so
 // `add(a, scalar(3.0))` is the scalar case of `add` rather than a
-// second function with its own tests and its own error rows.  Twelve
-// functions saved, and the one arithmetic surface says what numpy
-// means when it calls a scalar a zero-dimensional array.
+// second function with its own tests and its own error arms.  The one
+// arithmetic surface says what numpy means when it calls a scalar a
+// zero-dimensional array.
 //
-// WHAT IS A VIEW AND WHAT IS A COPY.  `reshape` of a packed array,
-// `transpose`, `swap_axes`, `slice_axis`, `index_axis` and
-// `broadcast_to` are VIEWS — a new shape over the same buffer, free,
-// and safe because a novo-lang list is a value that nobody can write
-// through.  Everything else materialises.  `pack` is the deliberate
-// copy.  `ndshape`'s module comment is where that is argued.
+// `reshape` of a packed array, `transpose`, `swap_axes`, `slice_axis`,
+// `index_axis` and `broadcast_to` are views.  A view is a new shape
+// over the same buffer.  It is free, and it is safe because a
+// novo-lang list is a value that nobody can write through.  Everything
+// else materialises a new buffer, and `pack` is the deliberate copy.
+// `ndshape`'s module comment carries the argument.
 //
-// NOTHING HERE IS IN-PLACE.  `with` returns a new array; there is no
-// `set`.  That is what keeps the package `[]` — `[mutate]` is a host
-// effect — and it is what makes every view safe.
+// Nothing here writes in place.  `with` answers a new array, and there
+// is no `set`.  That is what keeps the package free of effects,
+// because `[mutate]` is a host effect, and it is what makes every view
+// safe.
 
 use std.math
 
@@ -59,11 +56,11 @@ use std.math
 //         Err(e) => println(e.message())
 // ```
 pub struct NdFloat
-    // The flat buffer.  Its length is not the array's size: a view
+    // The flat buffer.  Its length is not the array's size.  A view
     // addresses a window inside it, and a broadcast axis reads one
     // element many times.
     data: [Float]
-    // The extents and the strides — see `ndshape`.
+    // The extents and the strides.  `ndshape` holds them.
     shape: NdShape
     // The flat position of element `[0, 0, …]`.  Non-zero exactly
     // when this array is a view that starts inside a larger buffer.
@@ -97,7 +94,7 @@ pub fn of_list(data: [Float], dims: [Int]) -> Result<NdFloat, NdFault>
 //
 // The scalar broadcasts against every shape, which is why this
 // package's arithmetic takes two arrays and never an array and a
-// number.  See the module comment.
+// number.  The module comment says more.
 //
 // ```novo
 // use ndfloat
@@ -152,12 +149,13 @@ pub fn filled(dims: [Int], value: Float) -> Result<NdFloat, NdFault>
     let out: [Float] = list.map(0..ndshape.size(s), i => value)
     Ok(NdFloat { data: out, shape: s, offset: 0 })
 
-// The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
+// The rank-1 array `start, start+step, …`, stopping before `stop`.
 //
-// Half-open, like numpy's and like a range: `arange(0.0, 3.0, 1.0)` is
-// three elements.  `NdBadRange` when `step` is 0.0, or when it points
-// away from `stop` — both are inputs with no finite answer, and
-// returning an empty array for them hides a typo.
+// The interval is half-open, as numpy's is and as a range is, so
+// `arange(0.0, 3.0, 1.0)` is three elements.  The answer is
+// `NdBadRange` when `step` is 0.0, and when `step` points away from
+// `stop`.  Neither input has a finite answer, and an empty array for
+// them would hide a typo.
 //
 // A negative step counts down, so `arange(3.0, 0.0, -1.0)` is
 // `[3.0, 2.0, 1.0]`.
@@ -177,20 +175,21 @@ pub fn arange(start: Float, stop: Float, step: Float) -> Result<NdFloat, NdFault
         return Err(NdBadRange("an arange whose step points away from its stop"))
     if step < 0.0 and stop > start
         return Err(NdBadRange("an arange whose step points away from its stop"))
-    // numpy's own count, `ceil((stop - start) / step)`, and each element
+    // numpy's own count is `ceil((stop - start) / step)`.  Each element
     // is `start + i*step` rather than an accumulation, so the drift over
     // a long range is one rounding rather than n of them.
     let n = float.to_int(math.ceil((stop - start) / step))
     let out: [Float] = list.map(0..n, i => start + int.to_float(i) * step)
     Ok(NdFloat { data: out, shape: ndshape.of_dims([n]), offset: 0 })
 
-// `count` evenly spaced numbers from `start` to `stop`, both INCLUDED.
+// `count` evenly spaced numbers from `start` to `stop`, both included.
 //
-// The other half of `arange`, and the reason both exist: `arange` is
-// half-open and counts by a step, `linspace` is closed and counts by a
-// length, and a plot's x-axis wants the second.  The last element is
-// exactly `stop` rather than the accumulation of `count - 1` steps, so
-// `linspace(0.0, 1.0, 11)` ends at 1.0 and not at 0.9999999999999999.
+// This is the other half of `arange`, and the reason both exist.
+// `arange` is half-open and counts by a step.  `linspace` is closed
+// and counts by a length, which is what a plot's x-axis wants.  The
+// last element is exactly `stop` rather than the accumulation of
+// `count - 1` steps, so `linspace(0.0, 1.0, 11)` ends at 1.0 and not
+// at 0.9999999999999999.
 //
 // `NdBadRange` for a `count` below 2, where "evenly spaced from start
 // to stop" names no array.
@@ -300,11 +299,12 @@ pub fn at(a: NdFloat, index: [Int]) -> Result<Float, NdFault>
         Err(e) => Err(e)
         Ok(f)  => Ok(a.data[a.offset + f])
 
-// The same array with one element changed — a new array, not a write.
+// The same array with one element changed.  The answer is a new array
+// and not a write.
 //
 // The result is packed and independent of `a`, so this costs a copy of
-// the whole buffer.  It is here because a notebook edits a cell, not
-// because it is the way to build an array: build one from a list.
+// the whole buffer.  It is here for an edit to one element.  An array
+// is built from a list, with `of_list`.
 //
 // ```novo
 // use ndfloat
@@ -319,7 +319,7 @@ pub fn at(a: NdFloat, index: [Int]) -> Result<Float, NdFault>
 // ```
 pub fn with(a: NdFloat, index: [Int], value: Float) -> Result<NdFloat, NdFault>
     // The answer is packed, so the position to change is the position in
-    // ROW-MAJOR order rather than in this array's own strides.
+    // row-major order rather than in this array's own strides.
     let packed = ndshape.of_dims(a.shape.dims)
     match ndshape.flat_index(packed, index)
         Err(e) => Err(e)
@@ -337,8 +337,8 @@ pub fn with(a: NdFloat, index: [Int], value: Float) -> Result<NdFloat, NdFault>
 // Every element in row-major order, view or not.
 //
 // This walks the strides, so it is correct for a transposed, sliced or
-// broadcast array — and a broadcast array's list repeats the stretched
-// element, which is the point.
+// broadcast array.  A broadcast array's list repeats the stretched
+// element, which is what a stretched axis means.
 //
 // ```novo
 // use ndfloat
@@ -353,10 +353,10 @@ pub fn to_list(a: NdFloat) -> [Float]
 
 // The same elements under a different shape.
 //
-// A VIEW when the array is packed — only the shape changes — and a
-// copy when it is not, because there is no set of strides that reads a
-// gapped buffer in a different rank.  `NdSizeMismatch` when the new
-// dims describe a different number of elements.
+// A view when the array is packed, where only the shape changes, and a
+// copy when it is not.  No set of strides reads a gapped buffer in a
+// different rank.  `NdSizeMismatch` when the new dims describe a
+// different number of elements.
 //
 // ```novo
 // use ndfloat
@@ -381,7 +381,7 @@ pub fn reshape(a: NdFloat, dims: [Int]) -> Result<NdFloat, NdFault>
         return Ok(NdFloat { data: a.data, shape: s, offset: a.offset })
     Ok(NdFloat { data: nf_read(a), shape: s, offset: 0 })
 
-// Every axis reversed.  A view; it does not copy.
+// Every axis reversed.  A view, so it does not copy.
 //
 // For a matrix this is the transpose.  For rank 0 and rank 1 it is the
 // array unchanged, which is numpy's answer.
@@ -397,7 +397,7 @@ pub fn reshape(a: NdFloat, dims: [Int]) -> Result<NdFloat, NdFault>
 pub fn transpose(a: NdFloat) -> NdFloat
     NdFloat { data: a.data, shape: ndshape.reverse_axes(a.shape), offset: a.offset }
 
-// Two axes exchanged.  A view; it does not copy.
+// Two axes exchanged.  A view, so it does not copy.
 //
 // ```novo
 // use ndfloat
@@ -416,11 +416,12 @@ pub fn swap_axes(a: NdFloat, first: Int, second: Int) -> Result<NdFloat, NdFault
         Ok(s)  => Ok(NdFloat { data: a.data, shape: s, offset: a.offset })
 
 // The positions `[start, stop)` along one axis, every other axis
-// whole.  A view; it does not copy.
+// whole.  A view, so it does not copy.
 //
-// Half-open, like every other range here.  Rank is unchanged — the
-// sliced axis is narrower, not gone — which is what makes a slice
-// stackable.  Out-of-order or out-of-range bounds are `NdBadRange`.
+// The interval is half-open, as every other range here is.  Rank is
+// unchanged, because the sliced axis is narrower rather than gone,
+// which is what makes a slice stackable.  Out-of-order or
+// out-of-range bounds are `NdBadRange`.
 //
 // ```novo
 // use ndfloat
@@ -449,13 +450,13 @@ pub fn slice_axis(a: NdFloat, axis: Int, start: Int, stop: Int) -> Result<NdFloa
         shape: NdShape { dims: dims, strides: a.shape.strides },
         offset: a.offset + start * a.shape.strides[axis] })
 
-// One position along one axis, with that axis DROPPED.  A view; it
+// One position along one axis, with that axis dropped.  A view, so it
 // does not copy.
 //
-// This is the row of a matrix: `index_axis(m, 0, 2)` is row 2 as a
+// This is the row of a matrix, so `index_axis(m, 0, 2)` is row 2 as a
 // rank-1 array.  The difference from `slice_axis(m, 0, 2, 3)` is the
-// rank — a slice of one keeps the axis, an index removes it — and both
-// are here because a notebook wants both.
+// rank.  A slice of one keeps the axis and an index removes it, and
+// both are published because a caller wants both.
 //
 // ```novo
 // use ndfloat
@@ -476,11 +477,11 @@ pub fn index_axis(a: NdFloat, axis: Int, at: Int) -> Result<NdFloat, NdFault>
                 return Err(NdIndexOutOfRange([at], a.shape.dims))
             Ok(NdFloat { data: a.data, shape: s, offset: a.offset + at * a.shape.strides[axis] })
 
-// The array stretched to a shape it broadcasts to.  A view; it does
+// The array stretched to a shape it broadcasts to.  A view, so it does
 // not copy, because a stretched axis is a stride of 0.
 //
 // The rule is `ndshape.broadcast`, and this is where a caller reaches
-// it directly — the arithmetic below does it for them.
+// it directly.  The arithmetic below reaches it for the caller.
 //
 // ```novo
 // use ndfloat
@@ -504,8 +505,9 @@ pub fn broadcast_to(a: NdFloat, dims: [Int]) -> Result<NdFloat, NdFault>
 // The same array over a fresh, contiguous, exactly-sized buffer.
 //
 // The only function here whose purpose is to copy.  Use it to let a
-// large buffer go when all that is wanted is a small view of it — see
-// `ndshape`'s module comment.  A packed array is returned unchanged.
+// large buffer go when all that is wanted is a small view of it, as
+// `ndshape`'s module comment describes.  A packed array comes back
+// unchanged.
 //
 // ```novo
 // use ndfloat
@@ -522,8 +524,8 @@ pub fn pack(a: NdFloat) -> NdFloat
 
 // Element-by-element sum, broadcasting by `ndshape.broadcast`.
 //
-// `add(a, scalar(1.0))` is how a number is added to every element —
-// see the module comment on why there is no second function for it.
+// `add(a, scalar(1.0))` is how a number is added to every element.
+// The module comment says why there is no second function for it.
 //
 // ```novo
 // use ndfloat
@@ -557,8 +559,8 @@ pub fn sub(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
 
 // Element-by-element product, broadcasting by `ndshape.broadcast`.
 //
-// NOT the matrix product — that is `matmul`, and the two are different
-// operations that numpy also keeps apart.
+// This is not the matrix product, which is `matmul`.  The two are
+// different operations, and numpy also keeps them apart.
 //
 // ```novo
 // use ndfloat
@@ -576,10 +578,10 @@ pub fn mul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
 
 // Element-by-element quotient, broadcasting by `ndshape.broadcast`.
 //
-// Division by zero is IEEE 754's answer — an infinity, or a NaN for
-// 0.0/0.0 — and not an error, because a notebook that divides a column
-// by a count wants the run to finish and the NaN to be visible.
-// `ndint.div` makes the opposite call, and says why.
+// Division by zero answers what IEEE 754 answers, which is an infinity,
+// or a NaN for 0.0/0.0.  It is not an error, because a program that
+// divides a column by a count wants the run to finish and the NaN to be
+// visible.  `ndint.div` decides the other way, and says why.
 //
 // ```novo
 // use ndfloat
@@ -638,10 +640,10 @@ pub fn neg(a: NdFloat) -> NdFloat
 pub fn abs(a: NdFloat) -> NdFloat
     map(a, nf_magnitude)
 
-// Every element's square root; a negative element becomes NaN.
+// Every element's square root.  A negative element becomes NaN.
 //
-// NaN rather than an error, for the reason `div` gives: the run
-// finishes and the bad element is visible where it is.
+// NaN rather than an error, for the reason `div` gives.  The run
+// finishes and the bad element is visible where it stands.
 //
 // ```novo
 // use ndfloat
@@ -667,7 +669,7 @@ pub fn sqrt(a: NdFloat) -> NdFloat
 pub fn exp(a: NdFloat) -> NdFloat
     map(a, nf_exponential)
 
-// Every element's natural logarithm; zero becomes negative infinity
+// Every element's natural logarithm.  Zero becomes negative infinity,
 // and a negative element becomes NaN.
 //
 // ```novo
@@ -683,10 +685,9 @@ pub fn ln(a: NdFloat) -> NdFloat
 
 // Every element through a function of the caller's.
 //
-// The escape hatch for the transform this package does not name.  The
-// function is pure — this package is `core`, and a function that
-// reached for an effect could not be called from here at all — which
-// is the reason `map` is a signature and not a warning.
+// This is the transform this package does not name.  The function the
+// caller passes is pure, because this package is `core` and a function
+// that reached for an effect could not be called from here at all.
 //
 // ```novo
 // use ndfloat
@@ -705,10 +706,10 @@ pub fn map(a: NdFloat, f: fn(Float) -> Float) -> NdFloat
 
 // Where two arrays are equal, broadcasting by `ndshape.broadcast`.
 //
-// Exact float equality, so NaN is equal to nothing including itself.
-// A notebook comparing computed floats wants `abs(sub(a, b))` against
-// a tolerance instead, and this function is honest rather than
-// helpful so that the choice stays the caller's.
+// Exact float equality, so NaN is equal to nothing, including itself.
+// A caller comparing computed floats wants `abs(sub(a, b))` against a
+// tolerance instead.  This function does not choose a tolerance, so
+// the choice stays the caller's.
 //
 // ```novo
 // use ndfloat
@@ -812,8 +813,8 @@ pub fn ge(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
 //
 // The rank falls to 1 whatever the array's rank was, because a
 // selection of scattered positions has no rectangle to keep.  The mask
-// must have the array's shape exactly — broadcasting a selection would
-// silently pick each element several times.
+// must have the array's shape exactly.  Broadcasting a selection would
+// pick each element several times without saying so.
 //
 // ```novo
 // use ndfloat
@@ -844,9 +845,9 @@ pub fn select(a: NdFloat, keep: NdMask) -> Result<NdFloat, NdFault>
 // `when_true` where the mask is true and `when_false` where it is
 // false, all three broadcasting by `ndshape.broadcast`.
 //
-// The shape-preserving companion to `select`: this is how a column is
-// cleaned in place — `where(mask, a, scalar(0.0))` — without changing
-// what fits beside it.
+// This is the shape-preserving companion to `select`.
+// `where(mask, a, scalar(0.0))` cleans a column without changing what
+// fits beside it.
 //
 // ```novo
 // use ndfloat
@@ -902,7 +903,7 @@ pub fn sum(a: NdFloat) -> Float
 
 // The arithmetic mean of every element.
 //
-// `NdEmptyReduction` on an empty array: the mean of nothing has no
+// `NdEmptyReduction` on an empty array.  The mean of nothing has no
 // value, and 0.0 would be a wrong answer rather than a missing one.
 //
 // ```novo
@@ -925,9 +926,10 @@ pub fn mean(a: NdFloat) -> Result<Float, NdFault>
 // The smallest element.  `NdEmptyReduction` on an empty array.
 //
 // NaN is never the answer while a number is present, which is numpy's
-// `nanmin` rather than its `min` — a notebook's minimum should not be
-// destroyed by one bad row, and a caller who wants NaN to win can ask
-// for it with a comparison.
+// `nanmin` rather than its `min`.  One bad element should not destroy
+// a minimum, and a caller who wants NaN to win can ask for it with a
+// comparison.  An array that is nothing but NaN answers a NaN, because
+// it is not empty.
 //
 // ```novo
 // use ndfloat
@@ -966,7 +968,7 @@ pub fn max(a: NdFloat) -> Result<Float, NdFault>
         return Err(NdEmptyReduction("max"))
     Ok(vals[nf_extreme(vals, false)])
 
-// The full index of the smallest element; the FIRST one on a tie.
+// The full index of the smallest element, and the first one on a tie.
 //
 // A full index rather than a flat position, because the caller holds a
 // shaped array and a flat position would make them do the arithmetic
@@ -989,7 +991,7 @@ pub fn argmin(a: NdFloat) -> Result<[Int], NdFault>
         return Err(NdEmptyReduction("argmin"))
     Ok(nf_unravel(a.shape.dims, nf_extreme(vals, true)))
 
-// The full index of the largest element; the FIRST one on a tie.
+// The full index of the largest element, and the first one on a tie.
 // `NdEmptyReduction` on an empty array.
 //
 // ```novo
@@ -1012,10 +1014,10 @@ pub fn argmax(a: NdFloat) -> Result<[Int], NdFault>
 // Sums along one axis, which is dropped.
 //
 // A rank-2 array summed along axis 0 gives a rank-1 array of column
-// totals.  The axis GOES rather than becoming 1: a notebook that wants
-// it kept reshapes, and a notebook that wants it gone would otherwise
-// reshape every time.  `NdAxisOutOfRange` for an axis this array does
-// not have.
+// totals.  The axis goes rather than becoming extent 1.  A caller who
+// wants it kept reshapes once, where a caller who wants it gone would
+// otherwise reshape every time.  `NdAxisOutOfRange` for an axis this
+// array does not have.
 //
 // ```novo
 // use ndfloat
@@ -1120,9 +1122,9 @@ pub fn max_axis(a: NdFloat, axis: Int) -> Result<NdFloat, NdFault>
 // Positions of the smallest element along one axis, which is dropped.
 //
 // An `NdInt` rather than an `NdFloat`, because a position is an
-// integer and rounding one through a double is how a large index
-// silently becomes the wrong index.  `NdEmptyReduction` when that axis
-// has extent 0.
+// integer.  A large index rounded through a double becomes the wrong
+// index without saying so.  `NdEmptyReduction` when that axis has
+// extent 0.
 //
 // ```novo
 // use ndfloat
@@ -1169,8 +1171,8 @@ pub fn argmax_axis(a: NdFloat, axis: Int) -> Result<NdInt, NdFault>
 
 // The inner product of two rank-1 arrays.
 //
-// Strictly rank 1 on both sides — `NdNotMatrix` otherwise — because
-// numpy's `dot` doing five different things at five different ranks is
+// Strictly rank 1 on both sides, and `NdNotMatrix` otherwise.  numpy's
+// `dot` does five different things at five different ranks, which is
 // the source of most of the confusion about it.  The matrix cases are
 // `matmul`.
 //
@@ -1203,11 +1205,11 @@ pub fn dot(left: NdFloat, right: NdFloat) -> Result<Float, NdFault>
 
 // The matrix product.
 //
-// Both operands are rank 1 or rank 2.  A rank-1 LEFT operand is read
-// as one row and the result loses that axis again; a rank-1 RIGHT
-// operand is read as one column and the result loses that one — which
+// Both operands are rank 1 or rank 2.  A rank-1 left operand is read
+// as one row, and the result loses that axis again.  A rank-1 right
+// operand is read as one column, and the result loses that one.  That
 // is numpy's rule, so `matmul(m, v)` of a 3-by-3 and a 3 is a 3.
-// `NdNotMatrix` above rank 2, `NdShapeMismatch` when the inner
+// `NdNotMatrix` above rank 2, and `NdShapeMismatch` when the inner
 // dimensions disagree.
 //
 // ```novo
@@ -1228,9 +1230,9 @@ pub fn matmul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
     let rr = list.len(right.shape.dims)
     if rr < 1 or rr > 2
         return Err(NdNotMatrix("matmul", rr))
-    // numpy's promotion: a rank-1 LEFT operand is one ROW, a rank-1 RIGHT
-    // operand is one COLUMN, and the promoted axis is dropped again from
-    // the answer.
+    // numpy's promotion.  A rank-1 left operand is one row, a rank-1
+    // right operand is one column, and the promoted axis is dropped
+    // again from the answer.
     var rows = 1
     var inner = left.shape.dims[0]
     if lr == 2
@@ -1261,8 +1263,9 @@ pub fn matmul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
 
 // Every element truncated towards zero, as an `NdInt`.
 //
-// Truncation and not rounding, so that `to_int(scalar(-1.7))` is -1;
-// a caller who wants nearest adds 0.5 with the right sign first.
+// Truncation and not rounding, so `to_int(scalar(-1.7))` is -1.  A
+// caller who wants the nearest integer adds 0.5 with the right sign
+// first.
 //
 // ```novo
 // use ndfloat
@@ -1280,19 +1283,19 @@ pub fn to_int(a: NdFloat) -> NdInt
 //
 // Everything below is private.  The walk, the read, the stretch and
 // the pairing are written out once per module rather than published
-// from `ndshape`: a `pub fn` added to a package eight others depend on
+// from `ndshape`.  A `pub fn` added to a package eight others depend on
 // is a wider change than thirty duplicated lines, and the day
 // `NdArray<T>` is spellable these copies become one.  `ndbool` carries
-// the same set minus the fallible stretch, which only a public
+// the same set without the fallible stretch, which only a public
 // `broadcast_to` needs and a mask does not have.
 
 // Every flat position this shape addresses, in row-major order, with
 // one axis left unexpanded.
 //
 // `skip` of -1 expands every axis, which is the whole array.  Any
-// other value leaves that axis alone, so the answer is one BASE per
-// element of the array with that axis dropped — which is exactly what
-// a reduction along it walks.
+// other value leaves that axis alone, so the answer is one base
+// position per element of the array with that axis dropped.  That is
+// what a reduction along the axis walks.
 fn nf_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
     var acc: [Int] = [offset]
     for ax in 0..list.len(s.dims)
@@ -1306,15 +1309,15 @@ fn nf_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
 
 // Every element in row-major order, view or not.
 fn nf_read(a: NdFloat) -> [Float]
-    // A PACKED array's buffer, read in order from its offset, already
-    // IS its elements in row-major order — `ndshape.is_packed` says so
-    // — so the common case hands the buffer back and walks nothing.
+    // A packed array's buffer, read in order from its offset, is
+    // already its elements in row-major order, as `ndshape.is_packed`
+    // says.  The common case hands the buffer back and walks nothing.
     if a.offset == 0 and ndshape.is_packed(a.shape) and list.len(a.data) == ndshape.size(a.shape)
         return a.data
     list.map(nf_walk(a.shape, a.offset, -1), o => a.data[o])
 
-// One lane per element of the reduced array: the elements that a
-// reduction along `axis` folds, in the result's row-major order.
+// The elements a reduction along `axis` folds, one group per element
+// of the reduced array, in the result's row-major order.
 fn nf_lanes(a: NdFloat, axis: Int) -> [[Float]]
     let extent = a.shape.dims[axis]
     let step = a.shape.strides[axis]
@@ -1323,9 +1326,9 @@ fn nf_lanes(a: NdFloat, axis: Int) -> [[Float]]
 
 // The strides that stretch `s` to `dims`, or why they do not.
 //
-// A stretched axis is a stride of 0 — that is the whole of what
-// broadcasting costs — and an axis off the front of the shorter shape
-// is stretched too.  The rule it enforces is `ndshape.broadcast`'s.
+// A stretched axis is a stride of 0, which is the whole of what
+// broadcasting costs.  An axis off the front of the shorter shape is
+// stretched too.  The rule it enforces is `ndshape.broadcast`'s.
 fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
     let r = list.len(s.dims)
     let n = list.len(dims)
@@ -1347,16 +1350,16 @@ fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
             return Err(NdNotBroadcastable(s.dims, dims))
     Ok(NdShape { dims: dims, strides: strides })
 
-// The strides that read `s` over `dims`, where `dims` is ALREADY a
+// The strides that read `s` over `dims`, where `dims` is already a
 // shape `s` broadcasts to.
 //
-// This is the stretch with no refusal in it, and it exists so the
-// binary operations have no unreachable error arm: by the time one of
+// This is the stretch with no refusal in it, and it exists so that the
+// binary operations have no unreachable error arm.  By the time one of
 // them gets here `ndshape.broadcast` has agreed the shape, so an axis
-// either matches — and keeps its stride — or is stretched, which is a
-// stride of 0.  `nf_stretch` above is the fallible entry, and it
-// is what the PUBLIC `broadcast_to` calls, because there the caller's
-// `dims` is the caller's own and may be anything.
+// either matches and keeps its stride, or is stretched, which is a
+// stride of 0.  `nf_stretch` above is the fallible entry, and it is
+// what the public `broadcast_to` calls, because there the `dims` is
+// the caller's own and may be anything.
 fn nf_widen(s: NdShape, dims: [Int]) -> NdShape
     let r = list.len(s.dims)
     let n = list.len(dims)
@@ -1403,14 +1406,14 @@ fn nf_compare(left: NdFloat, right: NdFloat, f: fn(Float, Float) -> Bool) -> Res
             let out: [Bool] = list.map(0..list.len(p.left), i => f(p.left[i], p.right[i]))
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
-// The position of the smallest (or largest) element, SKIPPING NaN and
-// taking the FIRST position on a tie.
+// The position of the smallest element, or of the largest, skipping
+// NaN and taking the first position on a tie.
 //
-// Skipping NaN is `min` and `max`'s published rule — numpy's `nanmin`
-// rather than its `min` — and `argmin` and `argmax` follow it so that
-// `at(a, argmin(a))` is `min(a)` at every input.  An array that is
-// nothing but NaN has no number to prefer, so position 0 is the
-// answer and the value there is a NaN.
+// Skipping NaN is `min` and `max`'s published rule, which is numpy's
+// `nanmin` rather than its `min`.  `argmin` and `argmax` follow it so
+// that `at(a, argmin(a))` is `min(a)` at every input.  An array that is
+// nothing but NaN has no number to prefer, so position 0 is the answer
+// and the value there is a NaN.
 fn nf_extreme(vals: [Float], smallest: Bool) -> Int
     var at = 0
     var best = 0.0
@@ -1429,8 +1432,8 @@ fn nf_extreme(vals: [Float], smallest: Bool) -> Int
 // The full index of a row-major position, which is what `argmin` and
 // `argmax` owe a caller holding a shaped array.
 //
-// Only ever called on a NON-EMPTY array, so no stride here is 0 and
-// the division is always by a positive number.
+// Only ever called on an array that is not empty, so no stride here is
+// 0 and the division is always by a positive number.
 fn nf_unravel(dims: [Int], flat: Int) -> [Int]
     let s = ndshape.of_dims(dims)
     var out: [Int] = []

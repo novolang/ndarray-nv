@@ -1,12 +1,9 @@
 // ndint_tests.nv — the API suite for the array of Int.
 //
-// RED ON PURPOSE: every body is a `todo()`, so each assertion reaches
-// `not implemented: ndarray-nv.ndint.<fn>`.
-//
-// The surface MIRRORS `ndfloat`'s, so this suite mirrors that one —
-// with the four places the two deliberately disagree given a case of
-// their own: integer division by zero, truncating remainder, the
-// absence of a mean, and `take`.
+// The surface mirrors `ndfloat`'s, so this suite mirrors that one.
+// The four places the two deliberately disagree each have a case of
+// their own.  Those are integer division by zero, the truncating
+// remainder, the absence of a mean, and `take`.
 
 use std.test
 use ndint

@@ -1,22 +1,23 @@
 // semantics_tests.nv — the numbers, checked against numpy.
 //
-// The published suites say what the SHAPE of an answer is.  This one
-// says what the NUMBERS are, and every vector in it is either printed
-// in numpy's own documentation or worked by hand from the rule numpy
-// documents.  Where this package DEPARTS from numpy — and it departs
-// in five named places — the departure has a case of its own, so the
-// difference is asserted rather than assumed.
+// The other suites say what the shape of an answer is.  This one says
+// what the numbers are.  Every vector in it is either printed in
+// numpy's own documentation or worked by hand from the rule numpy
+// documents.  This package departs from numpy in five named places,
+// and each departure has a case of its own, so the difference is
+// asserted rather than assumed.
 //
 // The five departures, each with a case below:
 //
-//   1. a reduction along an axis DROPS it; there is no `keepdims`.
+//   1. a reduction along an axis drops it, and there is no `keepdims`.
 //   2. a negative axis number is refused, not counted from the end.
-//   3. `min` and `max` skip NaN — numpy's `nanmin`/`nanmax`.
+//   3. `min` and `max` skip NaN, which is numpy's `nanmin` and
+//      `nanmax`.
 //   4. `argmin` and `argmax` skip NaN too, so `at(a, argmin(a))` is
 //      `min(a)`.  numpy's `argmin` propagates it instead.
 //   5. `ndint.div` truncates towards zero and `ndint.rem` takes the
-//      sign of the dividend — C's rule and novo-lang's own `/` and
-//      `%`, where numpy's `//` and `%` floor.
+//      sign of the dividend.  That is C's rule and novo-lang's own `/`
+//      and `%`, where numpy's `//` and `%` floor.
 
 use std.test
 use std.math

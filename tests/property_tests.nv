@@ -1,29 +1,30 @@
 // property_tests.nv — the laws, over shapes nobody chose.
 //
-// The other suites check VECTORS: a specific input against a specific
-// answer taken from numpy.  This one checks LAWS — statements that
-// have to hold for every array, whatever its shape — over a few
-// hundred shapes and buffers generated from the case number.
+// The other suites check vectors, which are a specific input against a
+// specific answer taken from numpy.  This one checks laws, which are
+// statements that have to hold for every array whatever its shape.  It
+// checks them over a few hundred shapes and buffers generated from the
+// case number.
 //
-// THE GENERATOR IS A HASH OF THE CASE NUMBER, not a random source.
-// This package is `core` and may not spend `[rand]`, and a failure
-// nobody can reproduce is not a failure anybody can fix, so case 37
-// is the same array today, tomorrow and on the other backend.  That
-// last is the point: this file is also a PROGRAM, and
+// The generator is a hash of the case number rather than a random
+// source.  This package is `core` and may not spend `[rand]`, and a
+// failure nobody can reproduce is not a failure anybody can fix, so
+// case 37 is the same array today, tomorrow and on the other backend.
+// That last part matters, because this file is also a program, and
 //
 //     novo run  tests/property_tests.nv
 //     novo run  tests/property_tests.nv --interp
 //
 // print byte-identical digests when the compiled and the interpreted
-// leg agree about every law below.  `novo test` has no interpreter
-// runner, so the differential check is `main`'s job and the `@test`
-// is the same run with the digest asserted instead of printed.
+// backend agree about every law below.  `novo test` has no interpreter
+// runner, so the comparison is `main`'s job, and the `@test` is the
+// same run with the digest asserted instead of printed.
 //
-// EVERYTHING IS INTEGER ARITHMETIC where a law is an equality.  A
-// float law like "the mean times the count is the sum" is false in
-// IEEE 754 for reasons that have nothing to do with this package, so
-// the float leg checks only the laws that survive rounding — the ones
-// where every operand is a small whole number.
+// A law that is an equality is checked in integer arithmetic.  A float
+// law such as "the mean times the count is the sum" is false in IEEE
+// 754 for reasons that have nothing to do with this package, so the
+// float half checks only the laws that survive rounding, which are the
+// ones where every operand is a small whole number.
 
 use std.test
 use ndshape
@@ -36,10 +37,10 @@ use ndbool
 
 // A non-negative pseudo-random integer from a case number and a slot.
 //
-// Two rounds of a linear congruential step, which is enough mixing
-// for shapes and small buffers and cannot overflow: every operand
-// below stays under 2^31 and every product under 2^62, so the SPEC
-// § 13.2 overflow trap is never reached.
+// Two rounds of a linear congruential step, which is enough mixing for
+// shapes and small buffers and cannot overflow.  Every operand below
+// stays under 2^31 and every product under 2^62, so the SPEC § 13.2
+// overflow trap is never reached.
 fn hash(case: Int, slot: Int) -> Int
     let a = (case * 7919 + slot * 104729 + 1013904223) % 2147483647
     (a * 1103515245 + 12345) % 2147483647
@@ -60,8 +61,8 @@ fn product(dims: [Int]) -> Int
         n = n * d
     n
 
-// An array, or the rank-0 zero if the pair does not describe one —
-// which every law below then reports as a failure rather than hiding.
+// An array, or the rank-0 zero if the pair does not describe one.
+// Every law below then reports that as a failure rather than hiding it.
 fn mk(data: [Int], dims: [Int]) -> NdInt
     match ndint.of_list(data, dims)
         Ok(a)  => a
@@ -72,8 +73,8 @@ fn mkf(data: [Float], dims: [Int]) -> NdFloat
         Ok(a)  => a
         Err(_) => ndfloat.scalar(0.0)
 
-// The `n`-by-`n` integer identity — `ndfloat.eye`'s counterpart, which
-// `ndint` does not publish.
+// The `n`-by-`n` integer identity, which is `ndfloat.eye`'s
+// counterpart.  `ndint` does not publish one.
 fn eye_int(n: Int) -> NdInt
     var out: [Int] = []
     for i in 0..n
@@ -100,14 +101,14 @@ fn unravel(dims: [Int], flat: Int) -> [Int]
 
 // ── The report a run produces ─────────────────────────────────────
 
-// What one run of the laws answers: how many it checked, how many
-// failed, and a checksum of every number it looked at.
+// What one run of the laws answers.  It carries how many checks it
+// made, how many failed, and a checksum of every number it looked at.
 struct Report
     cases: Int
     checks: Int
     failures: Int
     digest: Int
-    // The message of the FIRST fault a law ran into, so a broken run
+    // The message of the first fault a law ran into, so a broken run
     // says which operation refused rather than only how many did.
     fault: Str
 
@@ -133,8 +134,8 @@ fn check(r: Report, held: Bool) -> Report
         Report { cases: r.cases, checks: r.checks + 1, failures: r.failures + 1,
             digest: r.digest, fault: r.fault }
 
-// A law that ran into a refusal rather than a wrong answer: one
-// failure, and the message kept if it is the first one.
+// A law that ran into a refusal rather than a wrong answer.  It counts
+// one failure, and the message is kept if it is the first one.
 fn failed(r: Report, e: ndfault.NdFault) -> Report
     var first = r.fault
     if first == ""
@@ -169,7 +170,7 @@ fn run_laws(cases: Int) -> Report
         r = check(r, list.len(p.data) == n)
 
         // A transpose is its own inverse, and transposing twice is the
-        // array back — at every rank, which is where numpy's rank-1
+        // array back at every rank.  That is where numpy's rank-1
         // answer comes from.
         let t = ndint.transpose(a)
         r = check(r, ndint.to_list(ndint.transpose(t)) == flat)
@@ -189,7 +190,7 @@ fn run_laws(cases: Int) -> Report
         r = check(r, at_agrees)
 
         // A reduction along an axis, reduced again, is the reduction
-        // over the whole array — for all three of them, on every axis.
+        // over the whole array, for all three of them and on every axis.
         for k in 0..rank
             match ndint.sum_axis(a, k)
                 Ok(s)  =>
@@ -339,7 +340,7 @@ fn run_laws(cases: Int) -> Report
                 r = failed(r, e)
 
         // A predicate and its negation partition the array, and a
-        // selection is exactly as long as the mask's count.
+        // selection is as long as the mask's count.
         match ndint.gt(a, ndint.scalar(0))
             Ok(hi) =>
                 match ndint.le(a, ndint.scalar(0))
@@ -378,8 +379,8 @@ fn run_laws(cases: Int) -> Report
                 r = check(r, ndfloat.sum(z) == 0.0)
             Err(e) =>
                 r = failed(r, e)
-        // The mean lies between the smallest and the largest element —
-        // a law that survives rounding, where "mean times count is the
+        // The mean lies between the smallest and the largest element.
+        // That law survives rounding, where "mean times count is the
         // sum" would not.
         match ndfloat.mean(asf)
             Ok(m)  =>
@@ -425,8 +426,8 @@ fn run_laws(cases: Int) -> Report
             Err(e) =>
                 r = failed(r, e)
 
-        // (AB)^T is B^T A^T — the law that catches a transposed view
-        // being read the wrong way round.
+        // (AB)^T is B^T A^T.  That law catches a transposed view being
+        // read the wrong way round.
         match ndint.matmul(m1, m2)
             Ok(ab) =>
                 r = Report { cases: r.cases, checks: r.checks, failures: r.failures,
@@ -484,8 +485,8 @@ fn run_laws(cases: Int) -> Report
             Err(e)  =>
                 r = failed(r, e)
 
-        // And `where` on a mask of the same shape is `select`'s
-        // shape-preserving twin: it keeps exactly the marked elements.
+        // `where` on a mask of the same shape is `select`'s
+        // shape-preserving twin, and it keeps the marked elements.
         let ff = mkf(ndfloat.to_list(ndint.to_float(m1)), [rows, inner])
         match ndfloat.gt(ff, ndfloat.scalar(0.0))
             Ok(mask) =>
@@ -504,9 +505,9 @@ fn run_laws(cases: Int) -> Report
 
     r
 
-// The digest of 200 cases, which is what the two legs have to agree
-// on.  A change to the generator changes it; a change to an ANSWER
-// changes it too, which is the point.
+// The digest of 200 cases, which is what the two backends have to
+// agree on.  A change to the generator changes it, and so does a
+// change to any answer.
 fn digest_line(r: Report) -> Str
     var tail = ""
     if r.fault != ""

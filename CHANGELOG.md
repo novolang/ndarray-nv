@@ -5,17 +5,19 @@ All notable changes to ndarray-nv are recorded here. The format is
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.1 — 2026-09-18
+
+The documentation and comments in plain prose; no signature changed.
+
 ## 0.1.0 — 2026-09-18
 
-First implementation of the interface published as 0.0.1. Every `pub
-fn` has a body, no `todo()` remains under `src/`, and every signature
-is the one that was published — nothing moved, and nothing was added.
-`stability = "experimental"`.
+Shapes, the array of Float, the array of Int, the mask a comparison
+answers, and the one fault type. `stability = "experimental"`.
 
 ### Added
 
-- Bodies for all 129 published functions across `ndshape`, `ndfault`,
-  `ndbool`, `ndfloat` and `ndint`.
+- 129 functions across `ndshape`, `ndfault`, `ndbool`, `ndfloat` and
+  `ndint`.
 - `tests/semantics_tests.nv` — 19 tests whose expected answers are
   NumPy's, taken from NumPy's documentation where NumPy prints them:
   the broadcasting table, `arange` and `linspace`, the first position
@@ -38,8 +40,8 @@ is the one that was published — nothing moved, and nothing was added.
 - `to_list`, and therefore every operation that reads an array, hands
   the buffer straight back when the array is packed and starts at
   offset 0, instead of walking the strides position by position. The
-  answer is the same — `ndshape.is_packed` documents that a packed
-  array's buffer IS its elements in row-major order — and a 64-by-64
+  answer is the same, because a packed array's buffer is its elements
+  in row-major order, as `ndshape.is_packed` documents. A 64-by-64
   matrix multiply is 2.3 times faster for it.
 - Every loop in the package is written with the stdlib's own form:
   `for i in 0..n` for a counter, `list.map` for an accumulator that
@@ -49,29 +51,28 @@ is the one that was published — nothing moved, and nothing was added.
   `list.range(0, n)`. The two mean the same thing and `list.map` takes
   either, but `list.range` is refused at the `wasm` tier, so the
   spelling decides whether this package builds for a browser. The
-  publish records `tiers wasm,app` either way it is written here; it
-  recorded `tiers app` while the call was in.
+  publish records `tiers wasm,app` for the range literal. It recorded
+  `tiers app` while the call was in.
 
 ### Decided
 
-Two questions the interface left open, answered here. Neither changes a
-signature, and both are visible to a caller, so both are written down.
+Two answers a caller can see. Neither changes a signature, so both are
+written down here.
 
-- **`argmin` and `argmax` skip NaN**, the way `min` and `max` already
-  documented that they do. The consequence is that `at(a, argmin(a))`
-  is `min(a)` for every array. NumPy's `argmin` propagates the NaN
-  instead, so this is a sixth departure from NumPy and it is in the
-  README's list.
-- **An array that is nothing but NaN** answers a NaN from `min` and
-  `max`, and position zero from `argmin` and `argmax`. It is not an
-  empty array, so there is nothing for `NdEmptyReduction` to report.
+- `argmin` and `argmax` skip NaN, the way `min` and `max` do. The
+  consequence is that `at(a, argmin(a))` is `min(a)` for every array.
+  NumPy's `argmin` propagates the NaN instead, so this is a sixth
+  departure from NumPy, and it is in the README's list.
+- An array that is nothing but NaN answers a NaN from `min` and `max`,
+  and position zero from `argmin` and `argmax`. It is not an empty
+  array, so there is nothing for `NdEmptyReduction` to report.
 
 ### Known
 
-- **A toolchain defect was found on the way here and is fixed.** On
+- A toolchain defect was found on the way here, and it is fixed. On
   novo-lang 0.9.1, `[Bool] == [Bool]` answers false for equal lists
   whenever a list of `Float` was bound earlier in the same function, on
-  the compiled and the interpreted backend alike — a Bool box was
+  the compiled and the interpreted backend alike. A Bool box was
   written as a full cell and read as its first byte. Three lines
   reproduce it with no package at all: `let d = [1.0]` followed by
   `println("${[true] == [true]}")` prints `false`. The case "gt is the
@@ -80,15 +81,15 @@ signature, and both are visible to a caller, so both are written down.
   works around it. Filed as
   `cross-backend/bool-list-equality-answers-false-after-a-float-list-in-the-same-function`
   and fixed in the toolchain after 0.9.1.
-- **`ndbool` has no `broadcast_to`**, so a mask cannot be stretched to
-  a shape by a caller. `both`, `either` and `ndfloat.where` stretch it
-  internally. This was true of the interface and is unchanged.
-- **The two concrete arrays are still two.** A generic function over a
+- `ndbool` has no `broadcast_to`, so a mask cannot be stretched to a
+  shape by a caller. `both`, `either` and `ndfloat.where` stretch it
+  internally.
+- The two concrete arrays are still two. A generic function over a
   generic struct is still not emitted across a module boundary, so
-  `NdFloat` and `NdInt` continue to mirror each other member for
-  member, and the private machinery in each module mirrors the other's
-  as well. They collapse into one type by deletion when that closes.
-- No `@tier(embedded)` claim, and none is intended.
+  `NdFloat` and `NdInt` mirror each other member for member, and the
+  private machinery in each module mirrors the other's as well. They
+  collapse into one type by deletion when that closes.
+- No module carries `@tier(embedded)`, and none is intended.
 
 ## 0.0.2 — 2026-09-15
 
@@ -96,16 +97,16 @@ README rewritten to the package README style guide (docs/writing-a-readme.md); n
 
 ## 0.0.1 — 2026-09-10
 
-The **interface**: every signature and every effect row, and no bodies.
-`stability = "draft"`, and the release is recorded `implemented = false`.
+The declarations: every signature, every type and every effect row,
+with no function bodies. `stability = "draft"`.
 
 ### Added
 
 - `ndshape` — dims, strides and an offset, and the two rules a reader
   has to know: the right-aligned broadcasting rule, written once, and
   the answer to "does a transpose copy?", which is no. A view is free
-  AND safe here, because a novo-lang list is a value and nothing in this
-  package writes in place.
+  and it is safe here, because a novo-lang list is a value and nothing
+  in this package writes in place.
 - `ndfault` — one error enum for the whole package, nine variants, each
   carrying the shapes it compared.
 - `ndbool` — `NdMask`, the shaped array a comparison produces, so that
@@ -120,17 +121,17 @@ The **interface**: every signature and every effect row, and no bodies.
 
 ### Known
 
-- **Two concrete arrays rather than one `NdArray<T>`, and it was
-  measured.** A generic function over a generic struct is not emitted
-  for a call from another module — three faces of the same defect,
-  filed under `bugs/codegen-llvm/` — so a generic array would be
+- Two concrete arrays rather than one `NdArray<T>`, and the reason was
+  measured. A generic function over a generic struct is not emitted for
+  a call from another module. That is three faces of the same defect,
+  filed under `bugs/codegen-llvm/`, and it would leave a generic array
   unreachable from outside this package. `NdFloat` and `NdInt` mirror
-  each other deliberately: when that closes, they collapse into one
-  type by deletion.
-- **`xs[i] ?? d` on a list of Float or Int does not build**, filed under
-  `bugs/codegen-llvm/`. Nothing here reaches it — every body is a
-  `todo()` — and the implementation lane uses `list.get(xs, i) ?? d`,
-  which is the more honest spelling anyway.
-- No `@tier(embedded)` claim, and none is intended: every operation
-  allocates a fresh buffer, and a package whose cheapest call is an
-  allocation has no business in 64 KB of RAM.
+  each other deliberately, so that they collapse into one type by
+  deletion when that closes.
+- `xs[i] ?? d` on a list of Float or Int does not build, filed under
+  `bugs/codegen-llvm/`. Nothing in the package reaches it, because it
+  uses `list.get(xs, i) ?? d` instead, which is the more honest
+  spelling anyway.
+- No module carries `@tier(embedded)`, and none is intended. Every
+  operation allocates a fresh buffer, and a package whose cheapest call
+  is an allocation does not fit in 64 KB of RAM.

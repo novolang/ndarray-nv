@@ -1,23 +1,21 @@
 [package]
 name        = "ndarray-nv"
-version     = "0.1.0"
+version     = "0.1.1"
 description = "N-dimensional arrays of Float and of Int over a flat buffer, with a shape, strides and an offset: construction, reshape, transpose, slicing along an axis, broadcast arithmetic and comparison, reductions along an axis and over the whole array, and matrix multiply.  A view costs nothing because the buffer is a value, so a transpose never copies."
 
 license     = "Apache-2.0"
 
-# The first IMPLEMENTED release: every `pub fn` published as 0.0.1 and
-# 0.0.2 now has a body, no `todo()` remains under `src/`, and the
-# signatures are the ones that were published.  `experimental` because
-# the surface may still move between 0.1.x releases; what it will not
-# do is move silently, and a CHANGELOG heading says so when it does.
+# `experimental` because the surface may still move between 0.1.x
+# releases.  It will not move silently.  A CHANGELOG heading names
+# every change that breaks a caller.
 stability   = "experimental"
 
-# `core`, and it costs nothing to stay there: an array is a list of
+# `core`, and it costs nothing to stay there.  An array is a list of
 # numbers, a shape is a list of integers, and every function here is
 # arithmetic over what the caller already holds.  Nothing is read,
-# nothing is written, no clock and no entropy is consulted.  The
-# package makes NO `@tier(embedded)` claim — see README, "The layer,
-# and why" — so the audit's `core-embedded` row passes and says so.
+# nothing is written, and no clock and no entropy is consulted.  No
+# module carries `@tier(embedded)`, because every operation allocates
+# a fresh buffer.  The README says so under "What is not included".
 layer       = "core"
 
 category    = "science"
@@ -30,9 +28,8 @@ novo        = ">= 0.8.9"
 # A library: no `main`, so `novo pkg build` type-checks and
 # effect-checks every module under `src/` and writes no binary.
 #
-# The floor stays at 0.8.9, which is the toolchain the interface
-# declared: the bodies were built and their suites run against 0.8.9
-# as well as against 0.9.1, so nothing here raises the bar for the
+# The floor stays at 0.8.9.  Every module builds and every suite runs
+# on 0.8.9 as well as on 0.9.1, so nothing here raises the bar for the
 # packages that already depend on this one.
 
 [docs.pages]
@@ -40,7 +37,7 @@ novo        = ">= 0.8.9"
 
 [dependencies]
 # None.  A shape is `[Int]`, a buffer is `[Float]` or `[Int]`, and the
-# arithmetic is the language's own.  `std.array`'s ArrayF64 is NOT the
-# buffer here: every one of its methods is `[io]` because it is a
+# arithmetic is the language's own.  `std.array`'s ArrayF64 is not the
+# buffer here.  Every one of its methods is `[io]` because it is a
 # handle over an FFI allocation, and a `core` package may not spend an
 # effect to read its own element.

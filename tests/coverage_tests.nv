@@ -1,16 +1,15 @@
 // coverage_tests.nv — every line of src/, reached on purpose.
 //
-// The other suites say what the package MEANS.  This one exists so
-// that nothing in `src/` is shipped unexecuted: every `pub fn`, every
-// private helper, and every arm of every branch — including the nine
-// refusals, which are the half of an array library a caller actually
-// meets and the half a happy-path suite never runs.
+// The other suites say what the package means.  This one exists so
+// that nothing in `src/` ships unexecuted.  It reaches every `pub fn`,
+// every private helper and every arm of every branch, including the
+// nine refusals, which are the half of an array library a caller meets
+// and the half a happy-path suite never runs.
 //
 // `novo test --cov` measures one suite file at a time and does not
 // merge, so this is the file the 100% is measured on.  Where a case
-// here overlaps a case in `semantics_tests.nv`, the other one is the
-// one that says WHY the answer is what it is; this one is only making
-// sure the line ran.
+// here overlaps a case in `semantics_tests.nv`, the other one says why
+// the answer is what it is, and this one only makes sure the line ran.
 
 use std.test
 use std.math
@@ -190,8 +189,8 @@ fn test_ndbool_every_branch() [io]
             test.assert(ndbool.count(m) == 2)
 
             test.case("count_axis, and the axis it does not have")
-            // [[true, false], [true, false]] — two trues down column 0
-            // and none down column 1.
+            // [[true, false], [true, false]] has two trues down column
+            // 0 and none down column 1.
             match ndbool.count_axis(m, 0)
                 Ok(c)  => test.assert(ndint.to_list(c) == [2, 0])
                 Err(e) => test.fail("count_axis failed: ${e.message()}")

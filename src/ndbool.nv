@@ -1,29 +1,29 @@
 // ndbool.nv — the array a comparison produces, and the four things
 // worth asking it.
 //
-// WHY A COMPARISON DOES NOT RETURN A `[Bool]`.  `a > 0` on a 3-by-4
-// matrix is a 3-by-4 answer, and flattening it to twelve bools throws
-// away the only thing that makes the next call — a selection, a
-// count along an axis, a `where` — expressible.  So a mask carries a
-// shape like every other array here, and it is a view over its buffer
-// on exactly the same terms: `ndbool.transpose` of a mask is free.
+// A comparison does not answer a `[Bool]`.  `a > 0` on a 3-by-4 matrix
+// is a 3-by-4 answer, and flattening it to twelve truths throws away
+// the only thing that makes the next call expressible, whether that
+// call is a selection, a count along an axis or a `where`.  A mask
+// carries a shape like every other array here, and it is a view over
+// its buffer on the same terms.  `ndbool.swap_axes` of a mask is free.
 //
-// WHY IT IS A SEPARATE TYPE AND NOT `NdInt` OF 0s AND 1s.  Because the
-// type is the documentation.  A function that takes an `NdMask` cannot
-// be handed a column of counts by accident, and `select` and `where`
-// in `ndfloat` say what they need in their signatures rather than in
-// their prose.  The cost is `to_int` and `of_int` below, which is two
-// functions, and they are the only place the two representations meet.
+// A mask is a separate type rather than an `NdInt` of 0s and 1s,
+// because the type is the documentation.  A function that takes an
+// `NdMask` cannot be handed a column of counts by accident, and
+// `select` and `where` in `ndfloat` say what they need in their
+// signatures rather than in their prose.  The cost is `to_int` and
+// `of_int` below, which are the only place the two representations
+// meet.
 //
-// WHERE THE REST OF A MASK'S LIFE HAPPENS.  The comparisons that
-// PRODUCE a mask are in `ndfloat` and `ndint`, beside the arrays they
-// compare, and the selections that CONSUME one — `select`, `where` —
-// are there too.  What is here is everything a mask can answer on its
-// own.  `count_axis`, `to_int` and `of_int` name `NdInt`, so this
-// module and `ndint` refer to each other; the compiler resolves a
-// module pair that way without ceremony, and it is worth saying
-// because it is the reason a mask does not have to be an `NdInt` of
-// 0s and 1s to avoid a cycle.
+// The rest of a mask's life happens elsewhere.  The comparisons that
+// produce a mask are in `ndfloat` and `ndint`, beside the arrays they
+// compare, and `select` and `where`, which consume one, are there too.
+// What is here is everything a mask can answer on its own.
+// `count_axis`, `to_int` and `of_int` name `NdInt`, so this module and
+// `ndint` refer to each other.  The compiler resolves a module pair
+// that way without ceremony, which is why a mask does not have to be
+// an `NdInt` of 0s and 1s to avoid a cycle.
 
 // A shaped array of truths, as a comparison leaves it.
 //
@@ -36,7 +36,7 @@
 //         Err(e) => println(e.message())
 // ```
 pub struct NdMask
-    // The flat buffer.  Its length is not the array's size: a view
+    // The flat buffer.  Its length is not the array's size.  A view
     // addresses a window inside it, and a broadcast axis reads one
     // element many times.
     data: [Bool]
@@ -150,8 +150,8 @@ pub fn to_list(m: NdMask) -> [Bool]
 
 // Whether every position is true.
 //
-// An empty mask is `true` — the empty conjunction — which is numpy's
-// answer and the one that keeps `all(a) and all(b)` equal to
+// An empty mask is `true`, which is the empty conjunction.  That is
+// numpy's answer, and it keeps `all(a) and all(b)` equal to
 // `all(concat(a, b))`.
 //
 // ```novo
@@ -188,8 +188,8 @@ pub fn any(m: NdMask) -> Bool
 
 // How many positions are true.
 //
-// The one a notebook asks first, because `count(a > 0)` is how many
-// rows survived.
+// This is the question asked most often, because `count(a > 0)` is how
+// many rows survived.
 //
 // ```novo
 // use ndbool
@@ -279,9 +279,9 @@ pub fn either(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
             let out: [Bool] = list.map(0..list.len(p.left), i => p.left[i] or p.right[i])
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
-// Position-by-position negation, into a fresh packed buffer: there is
-// no stride that means "negated".  Named `invert` because `not` is
-// reserved.
+// Position-by-position negation, into a fresh packed buffer.  No
+// stride means "negated", so there is nothing to view.  Named `invert`
+// because `not` is reserved.
 //
 // ```novo
 // use ndbool
@@ -295,7 +295,7 @@ pub fn invert(m: NdMask) -> NdMask
     let out: [Bool] = list.map(nb_read(m), v => not v)
     NdMask { data: out, shape: ndshape.of_dims(m.shape.dims), offset: 0 }
 
-// The mask with two axes exchanged — free, like every other view.
+// The mask with two axes exchanged.  A view, so it does not copy.
 //
 // ```novo
 // use ndbool
@@ -315,8 +315,8 @@ pub fn swap_axes(m: NdMask, first: Int, second: Int) -> Result<NdMask, NdFault>
 
 // The same mask over a fresh, contiguous, exactly-sized buffer.
 //
-// The one function here whose purpose is to copy — see `ndshape`'s
-// module comment on what a view keeps alive.
+// The one function here whose purpose is to copy.  `ndshape`'s module
+// comment says what a view keeps alive.
 //
 // ```novo
 // use ndbool
@@ -350,7 +350,8 @@ pub fn to_int(m: NdMask) -> NdInt
             out = list.push(out, 0)
     NdInt { data: out, shape: ndshape.of_dims(m.shape.dims), offset: 0 }
 
-// Non-zero is true, zero is false — the inverse of `to_int`.
+// Non-zero is true and zero is false, which is the inverse of
+// `to_int`.
 //
 // ```novo
 // use ndbool
@@ -366,19 +367,19 @@ pub fn of_int(a: NdInt) -> NdMask
 
 // ── The module's own machinery ─────────────────────────────────────
 //
-// Four private helpers, and they are private on purpose: they are the
+// Four private helpers, and they are private on purpose.  They are the
 // same ones `ndfloat` and `ndint` carry, written out once per module
-// rather than published from `ndshape`, because adding a `pub fn` to
-// a package eight others already depend on is a wider change than
-// thirty duplicated lines.
+// rather than published from `ndshape`.  A `pub fn` added to a package
+// eight others already depend on is a wider change than thirty
+// duplicated lines.
 
 // Every flat position this mask's shape addresses, in row-major order,
 // skipping the expansion of one axis.
 //
-// `skip` of -1 expands every axis and is therefore the whole array;
-// any other value leaves that axis unexpanded, so the answer is one
-// BASE position per element of the array with that axis dropped —
-// which is exactly what a reduction along it walks.
+// `skip` of -1 expands every axis, which is the whole array.  Any
+// other value leaves that axis unexpanded, so the answer is one base
+// position per element of the array with that axis dropped.  That is
+// what a reduction along the axis walks.
 fn nb_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
     var acc: [Int] = [offset]
     for ax in 0..list.len(s.dims)
@@ -392,9 +393,9 @@ fn nb_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
 
 // Every truth in row-major order, view or not.
 fn nb_read(m: NdMask) -> [Bool]
-    // A PACKED array's buffer, read in order from its offset, already
-    // IS its elements in row-major order — `ndshape.is_packed` says so
-    // — so the common case hands the buffer back and walks nothing.
+    // A packed array's buffer, read in order from its offset, is
+    // already its elements in row-major order, as `ndshape.is_packed`
+    // says.  The common case hands the buffer back and walks nothing.
     if m.offset == 0 and ndshape.is_packed(m.shape) and list.len(m.data) == ndshape.size(m.shape)
         return m.data
     list.map(nb_walk(m.shape, m.offset, -1), o => m.data[o])
@@ -405,16 +406,16 @@ struct NbPair
     right: [Bool]
     dims: [Int]
 
-// The strides that read `s` over `dims`, where `dims` is ALREADY a
+// The strides that read `s` over `dims`, where `dims` is already a
 // shape `s` broadcasts to.
 //
-// This is the stretch with no refusal in it, and it exists so `both`
-// and `either` have no unreachable error arm: by the time one of them
-// gets here `ndshape.broadcast` has agreed the shape, so an axis
-// either matches — and keeps its stride — or is stretched, which is a
-// stride of 0.  A mask has no public `broadcast_to`, so this module
-// needs no fallible stretch beside it, where `ndfloat` and `ndint`
-// carry one for the caller's own `dims`.
+// This is the stretch with no refusal in it, and it exists so that
+// `both` and `either` have no unreachable error arm.  By the time one
+// of them gets here `ndshape.broadcast` has agreed the shape, so an
+// axis either matches and keeps its stride, or is stretched, which is
+// a stride of 0.  A mask has no public `broadcast_to`, so this module
+// needs no fallible stretch beside it.  `ndfloat` and `ndint` carry
+// one for the caller's own `dims`.
 fn nb_widen(s: NdShape, dims: [Int]) -> NdShape
     let r = list.len(s.dims)
     let n = list.len(dims)

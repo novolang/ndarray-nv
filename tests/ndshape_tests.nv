@@ -1,15 +1,12 @@
 // ndshape_tests.nv — the API suite for the layout.
 //
-// RED ON PURPOSE, like every suite in this package: the bodies are
-// `todo()`, so each assertion reaches `not implemented:
-// ndarray-nv.<module>.<fn>`.  `novo test tests/ndshape_tests.nv
-// --isolate` gives every `@test` its own process and prints which
-// function each one stopped at, which is the readable form of an
-// interface package's verdict.
+// What is asserted is what each function owes a caller, rather than
+// the state it leaves behind.  The fixtures are written out by hand,
+// because a shape is two lists and nothing has to be constructed for a
+// reader to say what `broadcast` owes them.
 //
-// What is asserted is the CONTRACT, not the state: the fixtures are
-// written by hand, because a shape is three lists and nothing has to
-// exist for a reader to say what `broadcast` owes them.
+// `novo test tests/ndshape_tests.nv --isolate` gives every `@test` its
+// own process and prints which function each one stopped at.
 
 use std.test
 use ndshape

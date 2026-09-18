@@ -1,9 +1,9 @@
 // ndshape.nv — how many elements there are, where each one lives, and
-// the two rules a notebook user's mental model depends on.
+// the two rules a reader's mental model depends on.
 //
-// A SHAPE IS DIMS PLUS STRIDES.  `dims` says how big the array is
+// A shape is dims plus strides.  `dims` says how big the array is
 // along each axis, outermost first.  `strides` says how far to step in
-// the FLAT buffer to move one place along that axis.  The offset lives
+// the flat buffer to move one place along that axis.  The offset lives
 // on the array rather than here, because two arrays can share a buffer
 // at different starting points with the same dims and strides.
 // Element `[i, j, k]` of an array with offset `o` is at
@@ -12,45 +12,46 @@
 //
 // and that one line is the whole layout.
 //
-// ROW-MAJOR IS THE DEFAULT AND THE ONLY THING CONSTRUCTED.  `of_dims`
-// builds the strides C-order — the last axis moves fastest — so a
-// freshly built array reads the way a nested list literal does.
-// Column-major arrives only as the RESULT of a transpose, never as a
-// construction option, because a second constructor would double every
-// test in the package to describe a layout that is one call away.
+// Row-major is the default, and it is the only order constructed.
+// `of_dims` builds the strides in C order, where the last axis moves
+// fastest, so a freshly built array reads the way a nested list
+// literal does.  Column-major arrives only as the result of a
+// transpose, never as a construction option.  A second constructor
+// would double every test in the package to describe a layout that is
+// one call away.
 //
-// THE ANSWER TO "DOES A TRANSPOSE COPY?" IS NO, AND NEITHER DOES A
-// SLICE, A BROADCAST OR AN INDEX ALONG AN AXIS.  All four are views: a
-// new shape over the SAME buffer.  In numpy that answer comes with a
-// warning attached, because a view aliases memory somebody else can
-// write through, and a notebook user who does not know which
-// operations view and which copy gets a wrong answer at three in the
-// morning.  Here it comes with no warning at all: a novo-lang list is
-// a VALUE.  Nothing in this package mutates an array in place —
-// `ndfloat.with` returns a new array rather than writing into the old
-// one — so there is no writer, and therefore no aliasing hazard for a
-// view to expose.  A view is free and it is safe, and those two facts
-// have the same cause.
+// A transpose does not copy, and neither does a slice, a broadcast or
+// an index along an axis.  All four are views, which means a new shape
+// over the same buffer.  In numpy that answer comes with a warning
+// attached, because a view aliases memory somebody else can write
+// through, and a reader who does not know which operations view and
+// which copy gets a wrong answer.  Here it comes with no warning at
+// all.  A novo-lang list is a value, and nothing in this package
+// mutates an array in place, so there is no writer and no aliasing
+// hazard for a view to expose.  `ndfloat.with` answers a new array
+// rather than writing into the old one.  A view is free and it is
+// safe, and those two facts have the same cause.
 //
-// What that buys, and it is the reason to carry strides at all: a
-// transpose of a million-element matrix is a list of two integers
-// reversed.  What it costs: a view's buffer stays alive as long as the
+// What that buys is the reason to carry strides at all.  A transpose
+// of a million-element matrix is a list of two integers reversed.
+// What it costs is that a view's buffer stays alive as long as the
 // view does, so slicing three elements out of a large array and
 // keeping only the slice keeps the large array too.  `ndfloat.pack` is
-// the escape — it materialises a view into a fresh, contiguous,
+// the escape.  It materialises a view into a fresh, contiguous,
 // exactly-sized buffer, and it is the only function in the package
-// whose PURPOSE is to copy.
+// whose purpose is to copy.
 //
-// BROADCASTING, WRITTEN ONCE.  `broadcast` below is where the rule
-// lives, and every other page in the package points at it.
+// The broadcasting rule is written once, in `broadcast` below, and
+// every other page in the package points at it.
 
 // The layout of an array: its extent along each axis, and the step
 // through the flat buffer that moves one place along it.
 //
 // `dims` and `strides` are always the same length, and that length is
-// the rank.  A rank-0 shape — both lists empty — is the SCALAR, which
-// broadcasts against everything; `ndfloat.scalar` is how one is made,
-// and it is why this package has no `add_scalar` beside `add`.
+// the rank.  A rank-0 shape has both lists empty, and it is the
+// scalar, which broadcasts against every other shape.
+// `ndfloat.scalar` is how one is made, and it is why this package has
+// no `add_scalar` beside `add`.
 //
 // ```novo
 // use ndshape
@@ -61,20 +62,20 @@
 // ```
 pub struct NdShape
     // The extent along each axis, outermost first.  Every entry is
-    // non-negative; a zero entry makes the array empty but keeps its
+    // non-negative.  A zero entry makes the array empty but keeps its
     // rank, which is what lets an empty selection still be reshaped.
     dims: [Int]
     // The step through the flat buffer, one per axis.  A stride may be
-    // zero — that is exactly what a broadcast axis is, an axis whose
-    // every position reads the same element — so `is_packed` is a
+    // zero, which is what a broadcast axis is, an axis whose every
+    // position reads the same element.  `is_packed` is therefore a
     // question worth asking rather than something derived from `dims`.
     strides: [Int]
 
 // The row-major shape of an array with these dimensions.
 //
-// The strides run right to left: the last axis has stride 1, and each
+// The strides run right to left.  The last axis has stride 1, and each
 // axis to its left has the stride of the one after it times that one's
-// extent.  So `[2, 3]` gets `[3, 1]`, and element `[1, 2]` is at flat
+// extent.  `[2, 3]` gets `[3, 1]`, and element `[1, 2]` is at flat
 // position 5.
 //
 // ```novo
@@ -97,8 +98,8 @@ pub fn of_dims(dims: [Int]) -> NdShape
 // The shape of a scalar: rank 0, one element, no axes.
 //
 // A scalar is not a one-element vector.  It has rank 0, so it
-// broadcasts against an array of any rank, and that is the whole
-// reason it exists here — see the module comment.
+// broadcasts against an array of any rank, which is the reason it
+// exists here.  The module comment says more.
 //
 // ```novo
 // use ndshape
@@ -122,8 +123,8 @@ pub fn rank(s: NdShape) -> Int
 
 // How many elements this shape describes: the product of its dims.
 //
-// A rank-0 shape has size 1 — the empty product — and a shape with a
-// zero anywhere in `dims` has size 0.
+// A rank-0 shape has size 1, which is the empty product.  A shape with
+// a zero anywhere in `dims` has size 0.
 //
 // ```novo
 // use ndshape
@@ -141,10 +142,9 @@ pub fn size(s: NdShape) -> Int
 // and no repeats.
 //
 // True exactly when the strides are the row-major strides of the dims.
-// A packed array's buffer, read in order from its offset, IS its
-// elements in row-major order — which is what `ndfloat.to_list` can
-// hand back without walking the strides, and what an implementation
-// will special-case for speed.
+// A packed array's buffer, read in order from its offset, is its
+// elements in row-major order.  That is what `ndfloat.to_list` hands
+// back without walking the strides.
 //
 // ```novo
 // use ndshape
@@ -159,8 +159,8 @@ pub fn is_packed(s: NdShape) -> Bool
 //
 // `index` must have exactly `rank(s)` coordinates, each in
 // `[0, dims[axis])`.  A short index is `NdRankMismatch` and an
-// out-of-range coordinate is `NdIndexOutOfRange`: two different
-// mistakes with two different fixes.
+// out-of-range coordinate is `NdIndexOutOfRange`.  They are two
+// different mistakes with two different fixes.
 //
 // ```novo
 // use ndshape
@@ -183,23 +183,23 @@ pub fn flat_index(s: NdShape, index: [Int]) -> Result<Int, NdFault>
 
 // The shape two operands broadcast to, or why they do not.
 //
-// THE RULE, and this is the page every broadcasting doc comment in the
-// package points at.  Line the two dim lists up at their RIGHT ends
-// and pad the shorter one on the left with 1s.  Then, axis by axis:
+// This is the rule every broadcasting doc comment in the package
+// points at.  Line the two dim lists up at their right ends and pad
+// the shorter one on the left with 1s.  Then, axis by axis:
 //
 //   - equal extents agree, and the result takes that extent;
 //   - an extent of 1 on either side agrees with anything, and the
-//     result takes the other side's extent — the size-1 axis is
+//     result takes the other side's extent.  The size-1 axis is
 //     stretched, which costs nothing because stretching is a stride
 //     of 0;
 //   - anything else is `NdNotBroadcastable`, with both shapes.
 //
-// So `[3, 1]` and `[1, 4]` broadcast to `[3, 4]`; `[2, 3]` and `[3]`
-// broadcast to `[2, 3]`; `[2, 3]` and `[4]` do not.  A rank-0 scalar
+// `[3, 1]` and `[1, 4]` broadcast to `[3, 4]`.  `[2, 3]` and `[3]`
+// broadcast to `[2, 3]`.  `[2, 3]` and `[4]` do not.  A rank-0 scalar
 // pads to all-1s and therefore agrees with every shape, which is the
 // mechanism behind `ndfloat.scalar`.
 //
-// The strides of the RESULT are not this function's business: each
+// The strides of the result are not this function's business.  Each
 // operand is stretched into place by `ndfloat.broadcast_to`, which
 // sets a 0 stride on every axis it stretched.
 //
@@ -219,9 +219,9 @@ pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
         n = rr
     var dims: [Int] = []
     for i in 0..n
-        // The two shapes are lined up at their RIGHT ends, so axis `i` of
-        // the result reads axis `i - pad` of each operand and takes the
-        // extent 1 where that axis is off the front.
+        // The two shapes are lined up at their right ends, so axis `i`
+        // of the result reads axis `i - pad` of each operand and takes
+        // the extent 1 where that axis is off the front.
         let li = i - (n - lr)
         let ri = i - (n - rr)
         var ld = 1
@@ -242,7 +242,7 @@ pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
 
 // The shape with two axes exchanged.
 //
-// Only the two entries of `dims` and the two of `strides` move; the
+// Only the two entries of `dims` and the two of `strides` move.  The
 // buffer is untouched, which is why a transpose is free.  Either axis
 // outside `[0, rank)` is `NdAxisOutOfRange`.
 //
@@ -272,12 +272,12 @@ pub fn swap_axes(s: NdShape, first: Int, second: Int) -> Result<NdShape, NdFault
         strides = list.push(strides, s.strides[j])
     Ok(NdShape { dims: dims, strides: strides })
 
-// The shape with every axis reversed — the transpose of a matrix,
-// generalised.
+// The shape with every axis reversed, which is the transpose of a
+// matrix generalised to any rank.
 //
-// For rank 0 and rank 1 this is the shape unchanged, which is numpy's
-// answer and the one that keeps `transpose(transpose(a))` equal to `a`
-// at every rank.
+// For rank 0 and rank 1 this is the shape unchanged.  That is numpy's
+// answer, and it keeps `transpose(transpose(a))` equal to `a` at every
+// rank.
 //
 // ```novo
 // use ndshape
@@ -291,9 +291,9 @@ pub fn reverse_axes(s: NdShape) -> NdShape
 // The shape with one axis dropped, as indexing a single position along
 // that axis leaves it.
 //
-// Rank falls by one.  This is the shape side of `ndfloat.index_axis`;
-// the offset the caller must add is that position times the dropped
-// axis's stride, which the array function does.
+// Rank falls by one.  This is the shape side of `ndfloat.index_axis`.
+// The offset the caller must add is that position times the dropped
+// axis's stride, and the array function adds it.
 //
 // ```novo
 // use ndshape
@@ -319,10 +319,10 @@ pub fn drop_axis(s: NdShape, axis: Int) -> Result<NdShape, NdFault>
 // shape addresses, starting at `offset`.
 //
 // The bound is the largest flat position the shape reaches, not the
-// product of its dims: a broadcast axis has stride 0 and addresses no
+// product of its dims.  A broadcast axis has stride 0 and addresses no
 // new memory, and a view addresses a window inside a larger buffer.
 // Every constructor that builds an array from a caller's list checks
-// this, and `NdSizeMismatch` is what it reports.
+// this, and reports `NdSizeMismatch` when it does not hold.
 //
 // ```novo
 // use ndshape
@@ -333,7 +333,7 @@ pub fn drop_axis(s: NdShape, axis: Int) -> Result<NdShape, NdFault>
 pub fn fits(s: NdShape, offset: Int, buffer_len: Int) -> Bool
     if offset < 0
         return false
-    // The bound is the largest flat position the shape REACHES.  A zero
+    // The bound is the largest flat position the shape reaches.  A zero
     // extent makes the array address nothing at all, and a zero stride
     // addresses no new memory, so neither adds to the reach.
     var reach = offset

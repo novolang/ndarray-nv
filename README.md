@@ -25,16 +25,10 @@ arithmetic over a token-embedding matrix),
 [dataframe-nv](https://novo-lang.org/packages/dataframe-nv), whose
 numeric columns convert to and from them.
 
-**Status: implemented, and experimental.** Version 0.1.0 is the first
-working release: every function published as an interface in 0.0.1 and
-0.0.2 now has a body, and every signature is the one that was
-published. The package is marked experimental because the surface may
-still change between 0.1.x releases. A change that breaks a caller will
-be named under a "Breaking" heading in the CHANGELOG.
-
-Everything the interface declared is implemented. What is not here is
-listed under "What is not included", and none of it is a stub: a
-function that is absent is absent, not present and broken.
+The stability is experimental, because the surface may still change
+between 0.1.x releases. A change that breaks a caller is named under a
+"Breaking" heading in the CHANGELOG. What is not here is listed under
+"What is not included".
 
 ## What an N-dimensional array is here
 
@@ -177,7 +171,8 @@ the dims and strides off one it has.
    matrix. This too departs from NumPy, which can keep the axis at
    extent 1.
 8. **`min` and `max` skip NaN.** They behave as NumPy's `nanmin` and
-   `nanmax`, not as its `min` and `max`.
+   `nanmax`, not as its `min` and `max`. An array that is nothing but
+   NaN answers a NaN, because it is not empty.
 9. **`argmin` and `argmax` answer the first position on a tie.** This
    follows NumPy. They also skip NaN, the way `min` and `max` do, so
    `at(a, argmin(a))` is always `min(a)`. NumPy's `argmin` propagates
@@ -220,12 +215,12 @@ the dims and strides off one it has.
   entropy. [stats-nv](https://novo-lang.org/packages/stats-nv) takes
   random draws as an argument instead.
 - **In-place mutation, and an iterator over elements.** See rule 5.
-- **A microcontroller build.** Every operation here allocates a fresh buffer.
-  Adding two arrays of a thousand elements allocates a thousand-element list.
-  A device with no heap allocator needs a fixed-size buffer the caller
-  supplies, which is a different interface rather than a flag on this one.
-  Nothing here is claimed to build for a device with no heap allocator, and
-  there is no `tests/embedded_probe.nv`.
+- **A microcontroller build.** No module here builds for a device with no
+  heap allocator, and there is no `tests/embedded_probe.nv`. Every
+  operation allocates a fresh buffer, so adding two arrays of a thousand
+  elements allocates a thousand-element list. A device with no heap
+  allocator needs a fixed-size buffer the caller supplies, which is a
+  different surface rather than a flag on this one.
 
 ## Related packages
 
@@ -263,12 +258,11 @@ novo test tests/coverage_tests.nv     # 10 tests: every line of src/
 novo test tests/property_tests.nv     #  1 test:  the laws, over 200 shapes
 ```
 
-The first four suites were published with the interface and are
-unchanged. They say what the shape of each answer is: that a transpose
-does not copy, that a broadcast refusal names both shapes, that a
-reduction drops its axis, that an empty reduction is refused rather
-than answering zero, that a negative axis is refused, and that the four
-documented differences between `ndfloat` and `ndint` hold.
+The first four suites say what the shape of each answer is: that a
+transpose does not copy, that a broadcast refusal names both shapes,
+that a reduction drops its axis, that an empty reduction is refused
+rather than answering zero, that a negative axis is refused, and that
+the four documented differences between `ndfloat` and `ndint` hold.
 
 `semantics_tests.nv` says what the numbers are. Its expected answers
 are NumPy's, taken from NumPy's own documentation where NumPy prints
@@ -307,12 +301,12 @@ per-multiply figure, so a later release has something to compare
 against. On the machine this release was built on a 64-by-64
 `ndfloat.matmul` takes 0.59 ms and an `ndint.matmul` 0.32 ms.
 
-**All seven suites pass.** One of them met a toolchain defect on the
-way here, and it is worth knowing about because it is invisible: on
-novo-lang 0.9.1 a `[Bool] == [Bool]` comparison answers false for equal
-lists whenever a list of `Float` was bound earlier in the same
-function, on the compiled and the interpreted backend alike. Three
-lines reproduce it with no package at all:
+All seven suites pass. One of them met a toolchain defect that is
+worth knowing about, because it is invisible. On novo-lang 0.9.1 a
+`[Bool] == [Bool]` comparison answers false for equal lists whenever a
+list of `Float` was bound earlier in the same function, on the compiled
+and the interpreted backend alike. Three lines reproduce it with no
+package at all:
 
 ```novo
 fn main() [io]
@@ -324,37 +318,6 @@ The case "gt is the one a notebook writes" in `tests/ndfloat_tests.nv`
 is written that way and was red for most of this release's
 development. Nothing in this package works around it. It is fixed in
 the toolchain, in a release after 0.9.1.
-
-## Implementation status
-
-Every declaration below is implemented.
-
-| Item | Implemented |
-| --- | --- |
-| `ndshape.NdShape`, `ndbool.NdMask`, `ndfloat.NdFloat`, `ndint.NdInt`, `ndfault.NdFault` | yes |
-| `ndshape.of_dims`, `.scalar`, `.rank`, `.size`, `.is_packed`, `.fits` | yes |
-| `ndshape.flat_index`, `.broadcast`, `.swap_axes`, `.reverse_axes`, `.drop_axis` | yes |
-| `ndfault`'s nine variants and its `Error` implementation | yes |
-| `ndbool.of_list`, `.filled`, `.shape`, `.size`, `.at`, `.to_list` | yes |
-| `ndbool.all`, `.any`, `.count`, `.count_axis`, `.both`, `.either`, `.invert` | yes |
-| `ndbool.swap_axes`, `.pack`, `.to_int`, `.of_int` | yes |
-| `ndfloat.of_list`, `.scalar`, `.zeros`, `.ones`, `.filled`, `.arange`, `.linspace`, `.eye` | yes |
-| `ndfloat.shape`, `.rank`, `.size`, `.at`, `.with`, `.to_list` | yes |
-| `ndfloat.reshape`, `.transpose`, `.swap_axes`, `.slice_axis`, `.index_axis`, `.broadcast_to`, `.pack` | yes |
-| `ndfloat.add`, `.sub`, `.mul`, `.div`, `.pow`, `.neg`, `.abs`, `.sqrt`, `.exp`, `.ln`, `.map` | yes |
-| `ndfloat.eq`, `.ne`, `.lt`, `.le`, `.gt`, `.ge`, `.select`, `.where` | yes |
-| `ndfloat.sum`, `.mean`, `.min`, `.max`, `.argmin`, `.argmax` | yes |
-| `ndfloat.sum_axis`, `.mean_axis`, `.min_axis`, `.max_axis`, `.argmin_axis`, `.argmax_axis` | yes |
-| `ndfloat.dot`, `.matmul`, `.to_int` | yes |
-| `ndint`'s forty-six functions, mirroring `ndfloat` and adding `.rem`, `.take`, `.to_float` | yes |
-
-Two answers this release fixes that the interface left open, both
-stated here because a caller can see the difference:
-
-| Question the interface did not answer | This release |
-| --- | --- |
-| What do `argmin` and `argmax` do with a NaN? | They skip it, the way `min` and `max` do, so `at(a, argmin(a))` is always `min(a)`. NumPy's `argmin` propagates the NaN instead. |
-| What does `min` answer for an array that is nothing but NaN? | A NaN, and `argmin` answers position zero. The array is not empty, so there is nothing to refuse. |
 
 ## Licence
 

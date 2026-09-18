@@ -1,13 +1,11 @@
 // ndfloat_tests.nv — the API suite for the array of Float.
 //
-// RED ON PURPOSE: every body is a `todo()`, so each assertion reaches
-// `not implemented: ndarray-nv.ndfloat.<fn>`.  `novo test
-// tests/ndfloat_tests.nv --isolate` gives every `@test` its own
-// process and names the function it stopped at.
+// The fixtures are written out by hand rather than constructed.  That
+// is what lets a statement about `at`, `to_list` and the views be
+// pinned down without a constructor in the way.
 //
-// The fixtures are written out by hand rather than constructed,
-// because that is what lets a contract about `at`, `to_list` and the
-// views be pinned down before any constructor exists.
+// `novo test tests/ndfloat_tests.nv --isolate` gives every `@test` its
+// own process and names the function it stopped at.
 
 use std.test
 use ndfloat
