@@ -889,25 +889,19 @@ pub fn where(keep: NdMask, when_true: NdFloat, when_false: NdFloat) -> Result<Nd
             match ndshape.broadcast(half, when_false.shape)
                 Err(e) => Err(e)
                 Ok(bs) =>
-                    match nf_stretch(ndbool.shape(keep), bs.dims)
-                        Err(e) => Err(e)
-                        Ok(ks) =>
-                            let flags = ndbool.to_list(NdMask { data: keep.data, shape: ks, offset: keep.offset })
-                            match nf_spread(when_true, bs.dims)
-                                Err(e) => Err(e)
-                                Ok(t) =>
-                                    match nf_spread(when_false, bs.dims)
-                                        Err(e) => Err(e)
-                                        Ok(f) =>
-                                            var out: [Float] = []
-                                            var i = 0
-                                            while i < list.len(flags)
-                                                if flags[i]
-                                                    out = list.push(out, t[i])
-                                                else
-                                                    out = list.push(out, f[i])
-                                                i = i + 1
-                                            Ok(NdFloat { data: out, shape: ndshape.of_dims(bs.dims), offset: 0 })
+                    let ks = nf_widen(ndbool.shape(keep), bs.dims)
+                    let flags = ndbool.to_list(NdMask { data: keep.data, shape: ks, offset: keep.offset })
+                    let t = nf_spread(when_true, bs.dims)
+                    let f = nf_spread(when_false, bs.dims)
+                    var out: [Float] = []
+                    var i = 0
+                    while i < list.len(flags)
+                        if flags[i]
+                            out = list.push(out, t[i])
+                        else
+                            out = list.push(out, f[i])
+                        i = i + 1
+                    Ok(NdFloat { data: out, shape: ndshape.of_dims(bs.dims), offset: 0 })
 
 // Every element added up.
 //
@@ -1403,11 +1397,34 @@ fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
         i = i + 1
     Ok(NdShape { dims: dims, strides: strides })
 
-// One operand stretched to a shape and read out flat.
-fn nf_spread(a: NdFloat, dims: [Int]) -> Result<[Float], NdFault>
-    match nf_stretch(a.shape, dims)
-        Err(e) => Err(e)
-        Ok(s)  => Ok(nf_read(NdFloat { data: a.data, shape: s, offset: a.offset }))
+// The strides that read `s` over `dims`, where `dims` is ALREADY a
+// shape `s` broadcasts to.
+//
+// This is the stretch with no refusal in it, and it exists so the
+// binary operations have no unreachable error arm: by the time one of
+// them gets here `ndshape.broadcast` has agreed the shape, so an axis
+// either matches — and keeps its stride — or is stretched, which is a
+// stride of 0.  `nf_stretch` above is the fallible entry, and it
+// is what the PUBLIC `broadcast_to` calls, because there the caller's
+// `dims` is the caller's own and may be anything.
+fn nf_widen(s: NdShape, dims: [Int]) -> NdShape
+    let r = list.len(s.dims)
+    let n = list.len(dims)
+    var strides: [Int] = []
+    var i = 0
+    while i < n
+        let si = i - (n - r)
+        if si >= 0 and s.dims[si] == dims[i]
+            strides = list.push(strides, s.strides[si])
+        else
+            strides = list.push(strides, 0)
+        i = i + 1
+    NdShape { dims: dims, strides: strides }
+
+// One operand stretched to a shape it is already known to reach, and
+// read out flat.
+fn nf_spread(a: NdFloat, dims: [Int]) -> [Float]
+    nf_read(NdFloat { data: a.data, shape: nf_widen(a.shape, dims), offset: a.offset })
 
 // Two arrays read out over the shape they broadcast to.
 struct NfPair
@@ -1420,13 +1437,7 @@ struct NfPair
 fn nf_pair(left: NdFloat, right: NdFloat) -> Result<NfPair, NdFault>
     match ndshape.broadcast(left.shape, right.shape)
         Err(e) => Err(e)
-        Ok(bs) =>
-            match nf_spread(left, bs.dims)
-                Err(e) => Err(e)
-                Ok(l)  =>
-                    match nf_spread(right, bs.dims)
-                        Err(e) => Err(e)
-                        Ok(r)  => Ok(NfPair { left: l, right: r, dims: bs.dims })
+        Ok(bs) => Ok(NfPair { left: nf_spread(left, bs.dims), right: nf_spread(right, bs.dims), dims: bs.dims })
 
 // The broadcast binary operation, once, for all five of them.
 fn nf_zip(left: NdFloat, right: NdFloat, f: fn(Float, Float) -> Float) -> Result<NdFloat, NdFault>

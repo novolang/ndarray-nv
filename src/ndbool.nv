@@ -384,8 +384,8 @@ pub fn of_int(a: NdInt) -> NdMask
 
 // ── The module's own machinery ─────────────────────────────────────
 //
-// Three private helpers, and they are private on purpose: they are the
-// SAME three `ndfloat` and `ndint` carry, written out once per module
+// Four private helpers, and they are private on purpose: they are the
+// same ones `ndfloat` and `ndint` carry, written out once per module
 // rather than published from `ndshape`, because adding a `pub fn` to
 // a package eight others already depend on is a wider change than
 // thirty duplicated lines.
@@ -419,39 +419,35 @@ fn nb_read(m: NdMask) -> [Bool]
         out = list.push(out, m.data[o])
     out
 
-// The strides that stretch `s` to `dims`, or why they do not.
-//
-// A stretched axis is a stride of 0 — that is the whole of what
-// broadcasting costs — and an axis off the front of the shorter shape
-// is stretched too.  The rule it enforces is `ndshape.broadcast`'s.
-fn nb_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
-    let r = list.len(s.dims)
-    let n = list.len(dims)
-    if n < r
-        return Err(NdNotBroadcastable(s.dims, dims))
-    var strides: [Int] = []
-    var i = 0
-    while i < n
-        let si = i - (n - r)
-        var d = 1
-        var st = 0
-        if si >= 0
-            d = s.dims[si]
-            st = s.strides[si]
-        if d == dims[i]
-            strides = list.push(strides, st)
-        elif d == 1
-            strides = list.push(strides, 0)
-        else
-            return Err(NdNotBroadcastable(s.dims, dims))
-        i = i + 1
-    Ok(NdShape { dims: dims, strides: strides })
-
 // Two masks read out over the shape they broadcast to.
 struct NbPair
     left: [Bool]
     right: [Bool]
     dims: [Int]
+
+// The strides that read `s` over `dims`, where `dims` is ALREADY a
+// shape `s` broadcasts to.
+//
+// This is the stretch with no refusal in it, and it exists so `both`
+// and `either` have no unreachable error arm: by the time one of them
+// gets here `ndshape.broadcast` has agreed the shape, so an axis
+// either matches — and keeps its stride — or is stretched, which is a
+// stride of 0.  A mask has no public `broadcast_to`, so this module
+// needs no fallible stretch beside it, where `ndfloat` and `ndint`
+// carry one for the caller's own `dims`.
+fn nb_widen(s: NdShape, dims: [Int]) -> NdShape
+    let r = list.len(s.dims)
+    let n = list.len(dims)
+    var strides: [Int] = []
+    var i = 0
+    while i < n
+        let si = i - (n - r)
+        if si >= 0 and s.dims[si] == dims[i]
+            strides = list.push(strides, s.strides[si])
+        else
+            strides = list.push(strides, 0)
+        i = i + 1
+    NdShape { dims: dims, strides: strides }
 
 // Both operands stretched to their common shape and read out flat, so
 // a combination is a walk down two equal-length lists.
@@ -459,13 +455,9 @@ fn nb_pair(left: NdMask, right: NdMask) -> Result<NbPair, NdFault>
     match ndshape.broadcast(left.shape, right.shape)
         Err(e) => Err(e)
         Ok(bs) =>
-            match nb_stretch(left.shape, bs.dims)
-                Err(e) => Err(e)
-                Ok(ls) =>
-                    match nb_stretch(right.shape, bs.dims)
-                        Err(e) => Err(e)
-                        Ok(rs) =>
-                            Ok(NbPair {
-                                left: nb_read(NdMask { data: left.data, shape: ls, offset: left.offset }),
-                                right: nb_read(NdMask { data: right.data, shape: rs, offset: right.offset }),
-                                dims: bs.dims })
+            let ls = nb_widen(left.shape, bs.dims)
+            let rs = nb_widen(right.shape, bs.dims)
+            Ok(NbPair {
+                left: nb_read(NdMask { data: left.data, shape: ls, offset: left.offset }),
+                right: nb_read(NdMask { data: right.data, shape: rs, offset: right.offset }),
+                dims: bs.dims })

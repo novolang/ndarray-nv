@@ -1,0 +1,816 @@
+// semantics_tests.nv — the numbers, checked against numpy.
+//
+// The published suites say what the SHAPE of an answer is.  This one
+// says what the NUMBERS are, and every vector in it is either printed
+// in numpy's own documentation or worked by hand from the rule numpy
+// documents.  Where this package DEPARTS from numpy — and it departs
+// in five named places — the departure has a case of its own, so the
+// difference is asserted rather than assumed.
+//
+// The five departures, each with a case below:
+//
+//   1. a reduction along an axis DROPS it; there is no `keepdims`.
+//   2. a negative axis number is refused, not counted from the end.
+//   3. `min` and `max` skip NaN — numpy's `nanmin`/`nanmax`.
+//   4. `argmin` and `argmax` skip NaN too, so `at(a, argmin(a))` is
+//      `min(a)`.  numpy's `argmin` propagates it instead.
+//   5. `ndint.div` truncates towards zero and `ndint.rem` takes the
+//      sign of the dividend — C's rule and novo-lang's own `/` and
+//      `%`, where numpy's `//` and `%` floor.
+
+use std.test
+use std.math
+use ndshape
+use ndfloat
+use ndint
+use ndbool
+
+// ── The layout ────────────────────────────────────────────────────
+
+@test
+fn test_row_major_strides_are_numpys_c_order() [io]
+    test.case("strides multiply right to left: [2,3,4] is [12,4,1]")
+    test.assert(ndshape.of_dims([2, 3, 4]).strides == [12, 4, 1])
+
+    test.case("element [1,2,3] of a 2x3x4 is at 1*12 + 2*4 + 3 = 23")
+    match ndshape.flat_index(ndshape.of_dims([2, 3, 4]), [1, 2, 3])
+        Ok(n)  => test.assert(n == 23)
+        Err(e) => test.fail("a legal index failed: ${e.message()}")
+
+    test.case("the last element of a 2x3x4 is at size - 1")
+    match ndshape.flat_index(ndshape.of_dims([2, 3, 4]), [1, 2, 3])
+        Ok(n)  => test.assert(n == ndshape.size(ndshape.of_dims([2, 3, 4])) - 1)
+        Err(e) => test.fail("a legal index failed: ${e.message()}")
+
+@test
+fn test_the_broadcasting_table_from_numpys_own_page() [io]
+    test.case("(8,1,6,1) with (7,1,5) is (8,7,6,5)")
+    match ndshape.broadcast(ndshape.of_dims([8, 1, 6, 1]), ndshape.of_dims([7, 1, 5]))
+        Ok(s)  => test.assert(s.dims == [8, 7, 6, 5])
+        Err(e) => test.fail("the page's headline example failed: ${e.message()}")
+
+    test.case("(5,4) with (1,) is (5,4)")
+    match ndshape.broadcast(ndshape.of_dims([5, 4]), ndshape.of_dims([1]))
+        Ok(s)  => test.assert(s.dims == [5, 4])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("(5,4) with (4,) is (5,4)")
+    match ndshape.broadcast(ndshape.of_dims([5, 4]), ndshape.of_dims([4]))
+        Ok(s)  => test.assert(s.dims == [5, 4])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("(15,3,5) with (15,1,5) is (15,3,5)")
+    match ndshape.broadcast(ndshape.of_dims([15, 3, 5]), ndshape.of_dims([15, 1, 5]))
+        Ok(s)  => test.assert(s.dims == [15, 3, 5])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("(15,3,5) with (3,5) is (15,3,5)")
+    match ndshape.broadcast(ndshape.of_dims([15, 3, 5]), ndshape.of_dims([3, 5]))
+        Ok(s)  => test.assert(s.dims == [15, 3, 5])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("(15,3,5) with (3,1) is (15,3,5)")
+    match ndshape.broadcast(ndshape.of_dims([15, 3, 5]), ndshape.of_dims([3, 1]))
+        Ok(s)  => test.assert(s.dims == [15, 3, 5])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("(3,) with (4,) does not broadcast — numpy's own counter-example")
+    match ndshape.broadcast(ndshape.of_dims([3]), ndshape.of_dims([4]))
+        Ok(_)  => test.fail("(3,) and (4,) claimed to broadcast")
+        Err(_) => test.assert(true)
+
+    test.case("(2,1) with (8,4,3) does not broadcast — numpy's other one")
+    match ndshape.broadcast(ndshape.of_dims([2, 1]), ndshape.of_dims([8, 4, 3]))
+        Ok(_)  => test.fail("(2,1) and (8,4,3) claimed to broadcast")
+        Err(_) => test.assert(true)
+
+    test.case("broadcasting is symmetric in its answer")
+    match ndshape.broadcast(ndshape.of_dims([7, 1, 5]), ndshape.of_dims([8, 1, 6, 1]))
+        Ok(s)  => test.assert(s.dims == [8, 7, 6, 5])
+        Err(e) => test.fail("the reversed pair failed: ${e.message()}")
+
+@test
+fn test_broadcast_to_stretches_by_a_zero_stride() [io]
+    test.case("numpy's broadcast_to([1,2,3], (3,3))")
+    match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+        Ok(v) =>
+            match ndfloat.broadcast_to(v, [3, 3])
+                Ok(b) =>
+                    test.assert(ndfloat.shape(b).strides == [0, 1])
+                    test.assert(ndfloat.to_list(b) == [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 1.0, 2.0, 3.0])
+                    test.assert(list.len(b.data) == 3)
+                Err(e) => test.fail("a legal stretch failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a column stretches across, not down")
+    match ndfloat.of_list([1.0, 2.0], [2, 1])
+        Ok(col) =>
+            match ndfloat.broadcast_to(col, [2, 3])
+                Ok(b) => test.assert(ndfloat.to_list(b) == [1.0, 1.0, 1.0, 2.0, 2.0, 2.0])
+                Err(e) => test.fail("a legal stretch failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a rank it cannot reach is refused")
+    match ndfloat.of_list([1.0, 2.0, 3.0], [1, 3])
+        Ok(m) =>
+            match ndfloat.broadcast_to(m, [3])
+                Ok(_)  => test.fail("a rank-2 array claimed to stretch to a rank-1 shape")
+                Err(_) => test.assert(true)
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+// ── Construction ──────────────────────────────────────────────────
+
+@test
+fn test_arange_and_linspace_against_numpys_printed_examples() [io]
+    test.case("np.arange(0, 3, 0.5)")
+    match ndfloat.arange(0.0, 3.0, 0.5)
+        Ok(a)  => test.assert(ndfloat.to_list(a) == [0.0, 0.5, 1.0, 1.5, 2.0, 2.5])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("np.arange(3.0) — the whole range, from zero")
+    match ndfloat.arange(0.0, 3.0, 1.0)
+        Ok(a)  => test.assert(ndfloat.to_list(a) == [0.0, 1.0, 2.0])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("np.arange(10, -1, -2) counts down and excludes the stop")
+    match ndint.arange(10, -1, -2)
+        Ok(a)  => test.assert(ndint.to_list(a) == [10, 8, 6, 4, 2, 0])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("a range that arrives exactly on the stop excludes it")
+    match ndint.arange(0, 6, 2)
+        Ok(a)  => test.assert(ndint.to_list(a) == [0, 2, 4])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("start == stop is the empty array, not a refusal")
+    match ndint.arange(4, 4, 1)
+        Ok(a)  => test.assert(ndint.size(a) == 0)
+        Err(e) => test.fail("an empty range was refused: ${e.message()}")
+    match ndfloat.arange(4.0, 4.0, 1.0)
+        Ok(a)  => test.assert(ndfloat.size(a) == 0)
+        Err(e) => test.fail("an empty range was refused: ${e.message()}")
+
+    test.case("np.linspace(2.0, 3.0, num=5)")
+    match ndfloat.linspace(2.0, 3.0, 5)
+        Ok(a)  => test.assert(ndfloat.to_list(a) == [2.0, 2.25, 2.5, 2.75, 3.0])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("linspace lands on the stop exactly, where an accumulation would not")
+    match ndfloat.linspace(0.0, 1.0, 11)
+        Ok(a)  =>
+            match ndfloat.at(a, [10])
+                Ok(v)  => test.assert(v == 1.0)
+                Err(e) => test.fail("unreadable: ${e.message()}")
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("a descending linspace is legal and closed at both ends")
+    match ndfloat.linspace(1.0, 0.0, 5)
+        Ok(a)  => test.assert(ndfloat.to_list(a) == [1.0, 0.75, 0.5, 0.25, 0.0])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+@test
+fn test_eye_is_numpys_identity() [io]
+    test.case("np.eye(3) is ones on the diagonal, zeros elsewhere")
+    match ndfloat.eye(3)
+        Ok(a)  => test.assert(ndfloat.to_list(a) == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
+        Err(e) => test.fail("failed: ${e.message()}")
+
+    test.case("eye(0) is the empty matrix, not a refusal")
+    match ndfloat.eye(0)
+        Ok(a)  => test.assert(ndfloat.size(a) == 0)
+        Err(e) => test.fail("eye(0) was refused: ${e.message()}")
+
+// ── The views ─────────────────────────────────────────────────────
+
+@test
+fn test_a_transpose_reads_in_the_transposed_order() [io]
+    test.case("np.transpose([[1,2,3],[4,5,6]]) reads 1 4 2 5 3 6")
+    match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        Ok(a) =>
+            let t = ndfloat.transpose(a)
+            test.assert(ndfloat.shape(t).dims == [3, 2])
+            test.assert(ndfloat.shape(t).strides == [1, 3])
+            test.assert(ndfloat.to_list(t) == [1.0, 4.0, 2.0, 5.0, 3.0, 6.0])
+            test.assert(list.len(t.data) == 6)
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a rank-3 swap moves the named pair and leaves the rest")
+    match ndint.of_list([0, 1, 2, 3, 4, 5, 6, 7], [2, 2, 2])
+        Ok(a) =>
+            match ndint.swap_axes(a, 0, 2)
+                Ok(b) => test.assert(ndint.to_list(b) == [0, 4, 2, 6, 1, 5, 3, 7])
+                Err(e) => test.fail("a legal swap failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a reshape of a NON-packed array materialises rather than lying")
+    match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        Ok(a) =>
+            match ndfloat.reshape(ndfloat.transpose(a), [6])
+                Ok(r) => test.assert(ndfloat.to_list(r) == [1.0, 4.0, 2.0, 5.0, 3.0, 6.0])
+                Err(e) => test.fail("a legal reshape failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a slice is a window and keeps the whole buffer alive")
+    match ndint.of_list([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [4, 3])
+        Ok(a) =>
+            match ndint.slice_axis(a, 0, 1, 3)
+                Ok(s) =>
+                    test.assert(ndint.shape(s).dims == [2, 3])
+                    test.assert(ndint.to_list(s) == [3, 4, 5, 6, 7, 8])
+                    test.assert(list.len(s.data) == 12)
+                    test.assert(list.len(ndint.pack(s).data) == 6)
+                Err(e) => test.fail("a legal slice failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("slicing a middle axis leaves the others whole")
+    match ndint.of_list([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [2, 3, 2])
+        Ok(a) =>
+            match ndint.slice_axis(a, 1, 1, 2)
+                Ok(s) =>
+                    test.assert(ndint.shape(s).dims == [2, 1, 2])
+                    test.assert(ndint.to_list(s) == [2, 3, 8, 9])
+                Err(e) => test.fail("a legal slice failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+// ── Arithmetic and broadcasting together ──────────────────────────
+
+@test
+fn test_broadcast_arithmetic_makes_an_outer_product() [io]
+    test.case("a column plus a row is the sum table — the rule's headline use")
+    match ndint.of_list([0, 10, 20], [3, 1])
+        Ok(col) =>
+            match ndint.of_list([1, 2], [2])
+                Ok(row) =>
+                    match ndint.add(col, row)
+                        Ok(t) =>
+                            test.assert(ndint.shape(t).dims == [3, 2])
+                            test.assert(ndint.to_list(t) == [1, 2, 11, 12, 21, 22])
+                        Err(e) => test.fail("a legal add failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a rank-0 scalar agrees with every shape")
+    match ndint.of_list([1, 2, 3, 4], [2, 2])
+        Ok(m) =>
+            match ndint.mul(m, ndint.scalar(3))
+                Ok(p) => test.assert(ndint.to_list(p) == [3, 6, 9, 12])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a stretched operand is read many times, not copied once")
+    match ndfloat.of_list([1.0, 2.0, 3.0], [1, 3])
+        Ok(row) =>
+            match ndfloat.of_list([10.0, 20.0], [2, 1])
+                Ok(col) =>
+                    match ndfloat.mul(row, col)
+                        Ok(p) => test.assert(ndfloat.to_list(p) == [10.0, 20.0, 30.0, 20.0, 40.0, 60.0])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_float_division_answers_ieee_754_and_never_an_error() [io]
+    test.case("x/0.0 is an infinity and 0.0/0.0 is a NaN")
+    match ndfloat.of_list([1.0, 0.0, -1.0], [3])
+        Ok(a) =>
+            match ndfloat.div(a, ndfloat.scalar(0.0))
+                Ok(q) =>
+                    let vs = ndfloat.to_list(q)
+                    test.assert(math.is_inf(vs[0]))
+                    test.assert(vs[0] > 0.0)
+                    test.assert(math.is_nan(vs[1]))
+                    test.assert(math.is_inf(vs[2]))
+                    test.assert(vs[2] < 0.0)
+                Err(e) => test.fail("float division by zero was refused: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("sqrt of a negative is a NaN, and ln of zero is -inf")
+    match ndfloat.of_list([-1.0, 0.0], [2])
+        Ok(a) =>
+            test.assert(math.is_nan(ndfloat.to_list(ndfloat.sqrt(a))[0]))
+            let lns = ndfloat.to_list(ndfloat.ln(a))
+            test.assert(math.is_nan(lns[0]))
+            test.assert(math.is_inf(lns[1]))
+            test.assert(lns[1] < 0.0)
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("pow follows the language's own exponent")
+    match ndfloat.of_list([2.0, 9.0], [2])
+        Ok(a) =>
+            match ndfloat.pow(a, ndfloat.scalar(0.5))
+                Ok(p) => test.assert(ndfloat.to_list(p) == [math.sqrt(2.0), 3.0])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_integer_division_departs_from_numpy_and_says_so() [io]
+    test.case("div TRUNCATES: -7/2 is -3 here, where numpy's // floors to -4")
+    match ndint.of_list([-7, 7, -8, 8], [4])
+        Ok(a) =>
+            match ndint.div(a, ndint.scalar(2))
+                Ok(q) => test.assert(ndint.to_list(q) == [-3, 3, -4, 4])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("rem takes the DIVIDEND's sign: -7 % 3 is -1, where numpy's is 2")
+    match ndint.of_list([-7, 7, -6, 6], [4])
+        Ok(a) =>
+            match ndint.rem(a, ndint.scalar(3))
+                Ok(r) => test.assert(ndint.to_list(r) == [-1, 1, 0, 0])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a negative divisor keeps the dividend's sign on the remainder")
+    match ndint.of_list([7, -7], [2])
+        Ok(a) =>
+            match ndint.rem(a, ndint.scalar(-3))
+                Ok(r) => test.assert(ndint.to_list(r) == [1, -1])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+// ── The reductions ────────────────────────────────────────────────
+
+@test
+fn test_nan_propagates_through_sum_and_mean_and_is_skipped_by_min_and_max() [io]
+    test.case("np.sum of a column with a NaN in it is NaN")
+    match ndfloat.of_list([1.0, math.nan(), 3.0], [3])
+        Ok(a) =>
+            test.assert(math.is_nan(ndfloat.sum(a)))
+
+            test.case("np.mean of the same column is NaN")
+            match ndfloat.mean(a)
+                Ok(m)  => test.assert(math.is_nan(m))
+                Err(e) => test.fail("mean was refused: ${e.message()}")
+
+            test.case("min is numpy's NANmin — the NaN does not win")
+            match ndfloat.min(a)
+                Ok(v)  => test.assert(v == 1.0)
+                Err(e) => test.fail("min failed: ${e.message()}")
+
+            test.case("max is numpy's NANmax")
+            match ndfloat.max(a)
+                Ok(v)  => test.assert(v == 3.0)
+                Err(e) => test.fail("max failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("argmin and argmax skip the NaN too, so at(a, argmin(a)) IS min(a)")
+    match ndfloat.of_list([math.nan(), 5.0, 0.5, 9.0], [4])
+        Ok(a) =>
+            match ndfloat.argmin(a)
+                Ok(i)  => test.assert(i == [2])
+                Err(e) => test.fail("argmin failed: ${e.message()}")
+            match ndfloat.argmax(a)
+                Ok(i)  => test.assert(i == [3])
+                Err(e) => test.fail("argmax failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("an array that is nothing but NaN answers NaN and position zero")
+    match ndfloat.of_list([math.nan(), math.nan()], [2])
+        Ok(a) =>
+            match ndfloat.min(a)
+                Ok(v)  => test.assert(math.is_nan(v))
+                Err(e) => test.fail("min of all-NaN was refused: ${e.message()}")
+            match ndfloat.argmax(a)
+                Ok(i)  => test.assert(i == [0])
+                Err(e) => test.fail("argmax of all-NaN was refused: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_argmax_takes_the_first_position_on_a_tie() [io]
+    test.case("np.argmax([0,1,1,0]) is 1, the FIRST of the two")
+    match ndint.of_list([0, 1, 1, 0], [4])
+        Ok(a) =>
+            match ndint.argmax(a)
+                Ok(i)  => test.assert(i == [1])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("and argmin does the same")
+    match ndint.of_list([3, 0, 0, 3], [4])
+        Ok(a) =>
+            match ndint.argmin(a)
+                Ok(i)  => test.assert(i == [1])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("on a matrix the FIRST is first in ROW-MAJOR order")
+    match ndint.of_list([0, 9, 9, 0], [2, 2])
+        Ok(a) =>
+            match ndint.argmax(a)
+                Ok(i)  => test.assert(i == [0, 1])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a rank-3 position is a three-coordinate index")
+    match ndint.of_list([0, 1, 2, 3, 4, 5, 6, 7], [2, 2, 2])
+        Ok(a) =>
+            match ndint.argmax(a)
+                Ok(i)  => test.assert(i == [1, 1, 1])
+                Err(e) => test.fail("failed: ${e.message()}")
+            match ndint.argmin(a)
+                Ok(i)  => test.assert(i == [0, 0, 0])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_an_axis_reduction_drops_the_axis_where_numpy_can_keep_it() [io]
+    test.case("np.sum([[1,2,3],[4,5,6]], axis=0) is [5,7,9]")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.sum_axis(a, 0)
+                Ok(s) =>
+                    test.assert(ndint.to_list(s) == [5, 7, 9])
+                    test.case("and its RANK IS 1 — there is no keepdims here")
+                    test.assert(ndint.rank(s) == 1)
+                    test.assert(ndint.shape(s).dims == [3])
+                Err(e) => test.fail("failed: ${e.message()}")
+
+            test.case("axis=1 is [6,15]")
+            match ndint.sum_axis(a, 1)
+                Ok(s) => test.assert(ndint.to_list(s) == [6, 15])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("np.argmax([[1,9,3],[4,5,6]], axis=0) is [1,0,1]")
+    match ndfloat.of_list([1.0, 9.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        Ok(a) =>
+            match ndfloat.argmax_axis(a, 0)
+                Ok(s) => test.assert(ndint.to_list(s) == [1, 0, 1])
+                Err(e) => test.fail("failed: ${e.message()}")
+
+            test.case("axis=1 is [1,2]")
+            match ndfloat.argmax_axis(a, 1)
+                Ok(s) => test.assert(ndint.to_list(s) == [1, 2])
+                Err(e) => test.fail("failed: ${e.message()}")
+
+            test.case("argmin along axis 1 is [0,0]")
+            match ndfloat.argmin_axis(a, 1)
+                Ok(s) => test.assert(ndint.to_list(s) == [0, 0])
+                Err(e) => test.fail("failed: ${e.message()}")
+
+            test.case("mean along axis 0 is the column means")
+            match ndfloat.mean_axis(a, 0)
+                Ok(s) => test.assert(ndfloat.to_list(s) == [2.5, 7.0, 4.5])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("reducing the MIDDLE axis of a rank-3 array leaves the outer pair")
+    match ndint.of_list([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [2, 3, 2])
+        Ok(a) =>
+            match ndint.sum_axis(a, 1)
+                Ok(s) =>
+                    test.assert(ndint.shape(s).dims == [2, 2])
+                    test.assert(ndint.to_list(s) == [9, 12, 27, 30])
+                Err(e) => test.fail("failed: ${e.message()}")
+
+            test.case("and the outermost leaves the inner pair")
+            match ndint.sum_axis(a, 0)
+                Ok(s) =>
+                    test.assert(ndint.shape(s).dims == [3, 2])
+                    test.assert(ndint.to_list(s) == [8, 10, 12, 14, 16, 18])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a reduction along an axis of a VIEW walks the view's strides")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.sum_axis(ndint.transpose(a), 0)
+                Ok(s) => test.assert(ndint.to_list(s) == [6, 15])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_a_negative_axis_is_refused_where_numpy_counts_from_the_end() [io]
+    test.case("np.sum(a, axis=-1) would be the last axis; here it is an error")
+    match ndint.of_list([1, 2, 3, 4], [2, 2])
+        Ok(a) =>
+            match ndint.sum_axis(a, -1)
+                Ok(_)  => test.fail("axis -1 was accepted")
+                Err(e) =>
+                    match e
+                        NdAxisOutOfRange(axis, rank) =>
+                            test.assert(axis == -1)
+                            test.assert(rank == 2)
+                        _                            => test.fail("a negative axis reported something else")
+
+            test.case("and so is a negative axis on a view, a take and a slice")
+            match ndint.slice_axis(a, -1, 0, 1)
+                Ok(_)  => test.fail("axis -1 was sliced")
+                Err(_) => test.assert(true)
+            match ndint.take(a, -1, [0])
+                Ok(_)  => test.fail("axis -1 was gathered")
+                Err(_) => test.assert(true)
+            match ndint.index_axis(a, -2, 0)
+                Ok(_)  => test.fail("axis -2 was indexed")
+                Err(_) => test.assert(true)
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+// ── The matrix product ────────────────────────────────────────────
+
+@test
+fn test_matmul_promotes_and_then_drops_exactly_as_numpy_does() [io]
+    test.case("2x3 times 3x2 is the textbook 2x2")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.of_list([7, 8, 9, 10, 11, 12], [3, 2])
+                Ok(b) =>
+                    match ndint.matmul(a, b)
+                        Ok(p) =>
+                            test.assert(ndint.shape(p).dims == [2, 2])
+                            test.assert(ndint.to_list(p) == [58, 64, 139, 154])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("matrix times VECTOR loses the promoted column: (2,3) @ (3,) is (2,)")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.of_list([1, 0, 1], [3])
+                Ok(v) =>
+                    match ndint.matmul(a, v)
+                        Ok(p) =>
+                            test.assert(ndint.rank(p) == 1)
+                            test.assert(ndint.to_list(p) == [4, 10])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("VECTOR times matrix loses the promoted row: (2,) @ (2,3) is (3,)")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.of_list([1, 1], [2])
+                Ok(v) =>
+                    match ndint.matmul(v, a)
+                        Ok(p) =>
+                            test.assert(ndint.rank(p) == 1)
+                            test.assert(ndint.to_list(p) == [5, 7, 9])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("vector times VECTOR loses both, so the answer is rank 0")
+    match ndint.of_list([1, 2, 3], [3])
+        Ok(v) =>
+            match ndint.matmul(v, v)
+                Ok(p) =>
+                    test.assert(ndint.rank(p) == 0)
+                    test.assert(ndint.size(p) == 1)
+                    test.assert(ndint.to_list(p) == [14])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("matmul of a VIEW is the product of what the view reads")
+    match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        Ok(a) =>
+            match ndfloat.matmul(ndfloat.transpose(a), a)
+                Ok(p) =>
+                    test.assert(ndfloat.shape(p).dims == [3, 3])
+                    test.assert(ndfloat.to_list(p) == [17.0, 22.0, 27.0, 22.0, 29.0, 36.0, 27.0, 36.0, 45.0])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("above rank 2 it stops rather than batching, which numpy would do")
+    match ndfloat.zeros([2, 2, 2])
+        Ok(a) =>
+            match ndfloat.matmul(a, a)
+                Ok(_)  => test.fail("a rank-3 operand was multiplied")
+                Err(e) =>
+                    match e
+                        NdNotMatrix(_, rank) => test.assert(rank == 3)
+                        _                    => test.fail("reported something else")
+        Err(e) => test.fail("zeros failed: ${e.message()}")
+
+    test.case("the identity is the unit on both sides")
+    match ndfloat.of_list([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2, 3])
+        Ok(a) =>
+            match ndfloat.eye(3)
+                Ok(i3) =>
+                    match ndfloat.matmul(a, i3)
+                        Ok(p) => test.assert(ndfloat.to_list(p) == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("eye failed: ${e.message()}")
+            match ndfloat.eye(2)
+                Ok(i2) =>
+                    match ndfloat.matmul(i2, a)
+                        Ok(p) => test.assert(ndfloat.to_list(p) == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("eye failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_dot_is_the_inner_product_and_nothing_else() [io]
+    test.case("[1,2,3] . [4,5,6] is 32")
+    match ndint.of_list([1, 2, 3], [3])
+        Ok(a) =>
+            match ndint.of_list([4, 5, 6], [3])
+                Ok(b) =>
+                    match ndint.dot(a, b)
+                        Ok(v)  => test.assert(v == 32)
+                        Err(e) => test.fail("failed: ${e.message()}")
+
+                    test.case("and it agrees with matmul's rank-0 answer")
+                    match ndint.matmul(a, b)
+                        Ok(p)  => test.assert(ndint.to_list(p) == [32])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("two vectors of different lengths stop the call")
+    match ndfloat.of_list([1.0, 2.0], [2])
+        Ok(a) =>
+            match ndfloat.of_list([1.0, 2.0, 3.0], [3])
+                Ok(b) =>
+                    match ndfloat.dot(a, b)
+                        Ok(_)  => test.fail("a 2 and a 3 answered a dot product")
+                        Err(e) =>
+                            match e
+                                NdShapeMismatch(want, got) =>
+                                    test.assert(want == [2])
+                                    test.assert(got == [3])
+                                _                          => test.fail("reported something else")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a rank-0 operand is not a vector either")
+    match ndfloat.dot(ndfloat.scalar(1.0), ndfloat.scalar(2.0))
+        Ok(_)  => test.fail("two scalars answered a dot product")
+        Err(e) =>
+            match e
+                NdNotMatrix(_, rank) => test.assert(rank == 0)
+                _                    => test.fail("reported something else")
+
+// ── Masks, selection and the gather ───────────────────────────────
+
+@test
+fn test_a_mask_selects_in_row_major_order_and_where_keeps_the_shape() [io]
+    test.case("select reads the kept elements in row-major order")
+    match ndint.of_list([5, 1, 6, 2], [2, 2])
+        Ok(a) =>
+            match ndint.gt(a, ndint.scalar(3))
+                Ok(m) =>
+                    test.assert(ndbool.count(m) == 2)
+                    match ndint.select(a, m)
+                        Ok(p) =>
+                            test.assert(ndint.rank(p) == 1)
+                            test.assert(ndint.to_list(p) == [5, 6])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("where broadcasts all three operands and keeps the common shape")
+    match ndfloat.of_list([-1.0, 5.0, -2.0, 6.0], [2, 2])
+        Ok(a) =>
+            match ndfloat.ge(a, ndfloat.scalar(0.0))
+                Ok(m) =>
+                    match ndfloat.where(m, a, ndfloat.scalar(0.0))
+                        Ok(c) =>
+                            test.assert(ndfloat.shape(c).dims == [2, 2])
+                            test.assert(ndfloat.to_list(c) == [0.0, 5.0, 0.0, 6.0])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("where stretches a rank-1 mask across a matrix")
+    match ndint.of_list([1, 2, 3, 4], [2, 2])
+        Ok(a) =>
+            match ndbool.of_list([true, false], [2])
+                Ok(m) =>
+                    match ndfloat.where(m, ndfloat.scalar(1.0), ndfloat.scalar(0.0))
+                        Ok(c) => test.assert(ndfloat.to_list(c) == [1.0, 0.0])
+                        Err(e) => test.fail("failed: ${e.message()}")
+                Err(e) => test.fail("of_list failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("count_axis is the number of trues per lane")
+    match ndbool.of_list([true, true, false, true, false, false], [2, 3])
+        Ok(m) =>
+            match ndbool.count_axis(m, 1)
+                Ok(c) => test.assert(ndint.to_list(c) == [2, 1])
+                Err(e) => test.fail("failed: ${e.message()}")
+            match ndbool.count_axis(m, 0)
+                Ok(c) => test.assert(ndint.to_list(c) == [2, 1, 0])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+@test
+fn test_take_is_numpys_gather_along_an_axis() [io]
+    test.case("np.take reorders and may repeat")
+    match ndint.of_list([10, 20, 30, 40], [4])
+        Ok(a) =>
+            match ndint.take(a, 0, [3, 1, 1, 0])
+                Ok(t) => test.assert(ndint.to_list(t) == [40, 20, 20, 10])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("gathering COLUMNS keeps the rows whole")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.take(a, 1, [2, 0])
+                Ok(t) =>
+                    test.assert(ndint.shape(t).dims == [2, 2])
+                    test.assert(ndint.to_list(t) == [3, 1, 6, 4])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("an empty gather is an empty axis, not a refusal")
+    match ndint.of_list([1, 2, 3], [3])
+        Ok(a) =>
+            match ndint.take(a, 0, [])
+                Ok(t) =>
+                    test.assert(ndint.shape(t).dims == [0])
+                    test.assert(ndint.size(t) == 0)
+                Err(e) => test.fail("an empty gather was refused: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a gather off a VIEW reads what the view reads")
+    match ndint.of_list([1, 2, 3, 4, 5, 6], [2, 3])
+        Ok(a) =>
+            match ndint.take(ndint.transpose(a), 0, [0, 2])
+                Ok(t) => test.assert(ndint.to_list(t) == [1, 4, 3, 6])
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+// ── The empty array ───────────────────────────────────────────────
+
+@test
+fn test_what_an_empty_array_answers() [io]
+    test.case("the empty sum is 0, as numpy's is")
+    match ndfloat.of_list([], [0])
+        Ok(e0) =>
+            test.assert(ndfloat.sum(e0) == 0.0)
+
+            test.case("every other reduction has no value and says which one")
+            match ndfloat.mean(e0)
+                Ok(_)  => test.fail("mean answered")
+                Err(e) =>
+                    match e
+                        NdEmptyReduction(what) => test.assert(what == "mean")
+                        _                      => test.fail("reported something else")
+        Err(e) => test.fail("the empty array was refused: ${e.message()}")
+
+    test.case("a zero anywhere in the dims empties the array and keeps its rank")
+    match ndint.zeros([2, 0, 3])
+        Ok(a) =>
+            test.assert(ndint.rank(a) == 3)
+            test.assert(ndint.size(a) == 0)
+            test.assert(ndint.to_list(a) == [])
+
+            test.case("a reduction ALONG the empty axis has no value")
+            match ndint.min_axis(a, 1)
+                Ok(_)  => test.fail("the min along an empty axis answered")
+                Err(_) => test.assert(true)
+
+            test.case("but a SUM along it is a lane of empty sums, which is 0")
+            match ndint.sum_axis(a, 1)
+                Ok(s) =>
+                    test.assert(ndint.shape(s).dims == [2, 3])
+                    test.assert(ndint.to_list(s) == [0, 0, 0, 0, 0, 0])
+                Err(e) => test.fail("failed: ${e.message()}")
+
+            test.case("and a reduction along a FULL axis of an empty array is empty")
+            match ndint.sum_axis(a, 0)
+                Ok(s) =>
+                    test.assert(ndint.shape(s).dims == [0, 3])
+                    test.assert(ndint.size(s) == 0)
+                Err(e) => test.fail("failed: ${e.message()}")
+        Err(e) => test.fail("zeros failed: ${e.message()}")
+
+    test.case("all of nothing is true and any of nothing is false")
+    match ndbool.filled([0], true)
+        Ok(m) =>
+            test.assert(ndbool.all(m))
+            test.assert(ndbool.any(m) == false)
+            test.assert(ndbool.count(m) == 0)
+        Err(e) => test.fail("filled failed: ${e.message()}")
+
+// ── The conversions ───────────────────────────────────────────────
+
+@test
+fn test_the_conversions_round_trip_and_truncate_towards_zero() [io]
+    test.case("to_int truncates towards zero at every sign")
+    match ndfloat.of_list([2.9, -2.9, 0.5, -0.5, 3.0], [5])
+        Ok(a) => test.assert(ndint.to_list(ndfloat.to_int(a)) == [2, -2, 0, 0, 3])
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("to_float widens exactly below 2^53")
+    match ndint.of_list([0, 1, -1, 9007199254740992], [4])
+        Ok(a) => test.assert(ndfloat.to_list(ndint.to_float(a)) == [0.0, 1.0, -1.0, 9007199254740992.0])
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a mask round-trips through the integers")
+    match ndbool.of_list([true, false, true, true], [2, 2])
+        Ok(m) =>
+            test.assert(ndint.to_list(ndbool.to_int(m)) == [1, 0, 1, 1])
+            test.assert(ndbool.count(ndbool.of_int(ndbool.to_int(m))) == 3)
+            test.assert(ndbool.shape(ndbool.of_int(ndbool.to_int(m))).dims == [2, 2])
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("of_int reads NON-ZERO as true, not just 1")
+    match ndint.of_list([0, 2, -5, 0], [4])
+        Ok(a) => test.assert(ndbool.count(ndbool.of_int(a)) == 2)
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("a conversion off a VIEW converts what the view reads")
+    match ndint.of_list([1, 2, 3, 4], [2, 2])
+        Ok(a) => test.assert(ndfloat.to_list(ndint.to_float(ndint.transpose(a))) == [1.0, 3.0, 2.0, 4.0])
+        Err(e) => test.fail("of_list failed: ${e.message()}")

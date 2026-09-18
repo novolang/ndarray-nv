@@ -1118,11 +1118,34 @@ fn ni_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
         i = i + 1
     Ok(NdShape { dims: dims, strides: strides })
 
-// One operand stretched to a shape and read out flat.
-fn ni_spread(a: NdInt, dims: [Int]) -> Result<[Int], NdFault>
-    match ni_stretch(a.shape, dims)
-        Err(e) => Err(e)
-        Ok(s)  => Ok(ni_read(NdInt { data: a.data, shape: s, offset: a.offset }))
+// The strides that read `s` over `dims`, where `dims` is ALREADY a
+// shape `s` broadcasts to.
+//
+// This is the stretch with no refusal in it, and it exists so the
+// binary operations have no unreachable error arm: by the time one of
+// them gets here `ndshape.broadcast` has agreed the shape, so an axis
+// either matches — and keeps its stride — or is stretched, which is a
+// stride of 0.  `ni_stretch` above is the fallible entry, and it
+// is what the PUBLIC `broadcast_to` calls, because there the caller's
+// `dims` is the caller's own and may be anything.
+fn ni_widen(s: NdShape, dims: [Int]) -> NdShape
+    let r = list.len(s.dims)
+    let n = list.len(dims)
+    var strides: [Int] = []
+    var i = 0
+    while i < n
+        let si = i - (n - r)
+        if si >= 0 and s.dims[si] == dims[i]
+            strides = list.push(strides, s.strides[si])
+        else
+            strides = list.push(strides, 0)
+        i = i + 1
+    NdShape { dims: dims, strides: strides }
+
+// One operand stretched to a shape it is already known to reach, and
+// read out flat.
+fn ni_spread(a: NdInt, dims: [Int]) -> [Int]
+    ni_read(NdInt { data: a.data, shape: ni_widen(a.shape, dims), offset: a.offset })
 
 // Two arrays read out over the shape they broadcast to.
 struct NiPair
@@ -1135,13 +1158,7 @@ struct NiPair
 fn ni_pair(left: NdInt, right: NdInt) -> Result<NiPair, NdFault>
     match ndshape.broadcast(left.shape, right.shape)
         Err(e) => Err(e)
-        Ok(bs) =>
-            match ni_spread(left, bs.dims)
-                Err(e) => Err(e)
-                Ok(l)  =>
-                    match ni_spread(right, bs.dims)
-                        Err(e) => Err(e)
-                        Ok(r)  => Ok(NiPair { left: l, right: r, dims: bs.dims })
+        Ok(bs) => Ok(NiPair { left: ni_spread(left, bs.dims), right: ni_spread(right, bs.dims), dims: bs.dims })
 
 // The broadcast binary operation, once, for the three that cannot
 // fail element by element.  `div` and `rem` write their own loop,
