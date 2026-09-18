@@ -29,6 +29,8 @@
 // four hold here for the same reasons and are argued there and in
 // `ndshape`.
 
+use std.math
+
 // An N-dimensional array of Int over a flat buffer.
 //
 // ```novo
@@ -63,7 +65,14 @@ pub struct NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn of_list(data: [Int], dims: [Int]) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.of_list")
+    for d in dims
+        if d < 0
+            return Err(NdBadRange("a shape with a negative dimension"))
+    let s = ndshape.of_dims(dims)
+    let want = ndshape.size(s)
+    if want != list.len(data)
+        return Err(NdSizeMismatch(want, list.len(data)))
+    Ok(NdInt { data: data, shape: s, offset: 0 })
 
 // The rank-0 array holding one integer, which broadcasts against every
 // shape.
@@ -75,7 +84,7 @@ pub fn of_list(data: [Int], dims: [Int]) -> Result<NdInt, NdFault>
 //     println("${ndint.sum(ndint.scalar(3))}")
 // ```
 pub fn scalar(value: Int) -> NdInt
-    todo("ndarray-nv.ndint.scalar")
+    NdInt { data: [value], shape: ndshape.scalar(), offset: 0 }
 
 // An array of this shape, every element 0.
 //
@@ -88,7 +97,7 @@ pub fn scalar(value: Int) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn zeros(dims: [Int]) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.zeros")
+    filled(dims, 0)
 
 // An array of this shape, every element 1.
 //
@@ -101,7 +110,7 @@ pub fn zeros(dims: [Int]) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn ones(dims: [Int]) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.ones")
+    filled(dims, 1)
 
 // An array of this shape, every element the same integer.
 //
@@ -114,7 +123,16 @@ pub fn ones(dims: [Int]) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn filled(dims: [Int], value: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.filled")
+    for d in dims
+        if d < 0
+            return Err(NdBadRange("a shape with a negative dimension"))
+    let s = ndshape.of_dims(dims)
+    var out: [Int] = []
+    var i = 0
+    while i < ndshape.size(s)
+        out = list.push(out, value)
+        i = i + 1
+    Ok(NdInt { data: out, shape: s, offset: 0 })
 
 // The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
 //
@@ -131,7 +149,27 @@ pub fn filled(dims: [Int], value: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.arange")
+    if step == 0
+        return Err(NdBadRange("an arange whose step is zero"))
+    if step > 0 and stop < start
+        return Err(NdBadRange("an arange whose step points away from its stop"))
+    if step < 0 and stop > start
+        return Err(NdBadRange("an arange whose step points away from its stop"))
+    // numpy's count, `ceil((stop - start) / step)`, done in integers:
+    // both operands of the division below are non-negative, so the
+    // truncating `/` is the floor and the `+ width - 1` is the ceiling.
+    var span = stop - start
+    var width = step
+    if step < 0
+        span = start - stop
+        width = 0 - step
+    let n = (span + width - 1) / width
+    var out: [Int] = []
+    var i = 0
+    while i < n
+        out = list.push(out, start + i * step)
+        i = i + 1
+    Ok(NdInt { data: out, shape: ndshape.of_dims([n]), offset: 0 })
 
 // This array's layout.
 //
@@ -144,7 +182,7 @@ pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn shape(a: NdInt) -> NdShape
-    todo("ndarray-nv.ndint.shape")
+    a.shape
 
 // How many axes this array has.
 //
@@ -157,7 +195,7 @@ pub fn shape(a: NdInt) -> NdShape
 //         Err(e) => println(e.message())
 // ```
 pub fn rank(a: NdInt) -> Int
-    todo("ndarray-nv.ndint.rank")
+    list.len(a.shape.dims)
 
 // How many elements this array has.
 //
@@ -170,7 +208,7 @@ pub fn rank(a: NdInt) -> Int
 //         Err(e) => println(e.message())
 // ```
 pub fn size(a: NdInt) -> Int
-    todo("ndarray-nv.ndint.size")
+    ndshape.size(a.shape)
 
 // The integer at one full index.
 //
@@ -186,7 +224,9 @@ pub fn size(a: NdInt) -> Int
 //         Err(e) => println(e.message())
 // ```
 pub fn at(a: NdInt, index: [Int]) -> Result<Int, NdFault>
-    todo("ndarray-nv.ndint.at")
+    match ndshape.flat_index(a.shape, index)
+        Err(e) => Err(e)
+        Ok(f)  => Ok(a.data[a.offset + f])
 
 // The same array with one element changed — a new array, not a write.
 //
@@ -202,7 +242,21 @@ pub fn at(a: NdInt, index: [Int]) -> Result<Int, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.with")
+    // The answer is packed, so the position to change is the position in
+    // ROW-MAJOR order rather than in this array's own strides.
+    let packed = ndshape.of_dims(a.shape.dims)
+    match ndshape.flat_index(packed, index)
+        Err(e) => Err(e)
+        Ok(at)  =>
+            var out: [Int] = []
+            var i = 0
+            for v in ni_read(a)
+                if i == at
+                    out = list.push(out, value)
+                else
+                    out = list.push(out, v)
+                i = i + 1
+            Ok(NdInt { data: out, shape: packed, offset: 0 })
 
 // Every element in row-major order, view or not.
 //
@@ -215,7 +269,7 @@ pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(a: NdInt) -> [Int]
-    todo("ndarray-nv.ndint.to_list")
+    ni_read(a)
 
 // The same elements under a different shape — a view when the array is
 // packed, a copy when it is not.
@@ -232,7 +286,16 @@ pub fn to_list(a: NdInt) -> [Int]
 //         Err(e) => println(e.message())
 // ```
 pub fn reshape(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.reshape")
+    for d in dims
+        if d < 0
+            return Err(NdBadRange("a shape with a negative dimension"))
+    let s = ndshape.of_dims(dims)
+    let want = ndshape.size(s)
+    if want != ndshape.size(a.shape)
+        return Err(NdSizeMismatch(want, ndshape.size(a.shape)))
+    if ndshape.is_packed(a.shape)
+        return Ok(NdInt { data: a.data, shape: s, offset: a.offset })
+    Ok(NdInt { data: ni_read(a), shape: s, offset: 0 })
 
 // Every axis reversed.  A view; it does not copy.
 //
@@ -245,7 +308,7 @@ pub fn reshape(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn transpose(a: NdInt) -> NdInt
-    todo("ndarray-nv.ndint.transpose")
+    NdInt { data: a.data, shape: ndshape.reverse_axes(a.shape), offset: a.offset }
 
 // Two axes exchanged.  A view; it does not copy.
 //
@@ -261,7 +324,9 @@ pub fn transpose(a: NdInt) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn swap_axes(a: NdInt, first: Int, second: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.swap_axes")
+    match ndshape.swap_axes(a.shape, first, second)
+        Err(e) => Err(e)
+        Ok(s)  => Ok(NdInt { data: a.data, shape: s, offset: a.offset })
 
 // The positions `[start, stop)` along one axis, every other axis
 // whole.  A view; rank is unchanged.
@@ -278,7 +343,22 @@ pub fn swap_axes(a: NdInt, first: Int, second: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn slice_axis(a: NdInt, axis: Int, start: Int, stop: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.slice_axis")
+    let r = list.len(a.shape.dims)
+    if axis < 0 or axis >= r
+        return Err(NdAxisOutOfRange(axis, r))
+    if start < 0 or stop < start or stop > a.shape.dims[axis]
+        return Err(NdBadRange("a slice whose bounds are not inside its axis"))
+    var dims: [Int] = []
+    var i = 0
+    while i < r
+        if i == axis
+            dims = list.push(dims, stop - start)
+        else
+            dims = list.push(dims, a.shape.dims[i])
+        i = i + 1
+    Ok(NdInt { data: a.data,
+        shape: NdShape { dims: dims, strides: a.shape.strides },
+        offset: a.offset + start * a.shape.strides[axis] })
 
 // One position along one axis, with that axis DROPPED.  A view.
 //
@@ -294,7 +374,12 @@ pub fn slice_axis(a: NdInt, axis: Int, start: Int, stop: Int) -> Result<NdInt, N
 //         Err(e) => println(e.message())
 // ```
 pub fn index_axis(a: NdInt, axis: Int, at: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.index_axis")
+    match ndshape.drop_axis(a.shape, axis)
+        Err(e) => Err(e)
+        Ok(s)  =>
+            if at < 0 or at >= a.shape.dims[axis]
+                return Err(NdIndexOutOfRange([at], a.shape.dims))
+            Ok(NdInt { data: a.data, shape: s, offset: a.offset + at * a.shape.strides[axis] })
 
 // The array stretched to a shape it broadcasts to, by
 // `ndshape.broadcast`.  A view.
@@ -311,7 +396,12 @@ pub fn index_axis(a: NdInt, axis: Int, at: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn broadcast_to(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.broadcast_to")
+    for d in dims
+        if d < 0
+            return Err(NdBadRange("a shape with a negative dimension"))
+    match ni_stretch(a.shape, dims)
+        Err(e) => Err(e)
+        Ok(s)  => Ok(NdInt { data: a.data, shape: s, offset: a.offset })
 
 // The same array over a fresh, contiguous, exactly-sized buffer.
 //
@@ -324,7 +414,9 @@ pub fn broadcast_to(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn pack(a: NdInt) -> NdInt
-    todo("ndarray-nv.ndint.pack")
+    if a.offset == 0 and ndshape.is_packed(a.shape) and list.len(a.data) == ndshape.size(a.shape)
+        return a
+    NdInt { data: ni_read(a), shape: ndshape.of_dims(a.shape.dims), offset: 0 }
 
 // Element-by-element sum, broadcasting by `ndshape.broadcast`.
 //
@@ -340,7 +432,7 @@ pub fn pack(a: NdInt) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn add(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.add")
+    ni_zip(left, right, ni_plus)
 
 // Element-by-element difference, broadcasting by `ndshape.broadcast`.
 //
@@ -356,7 +448,7 @@ pub fn add(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn sub(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.sub")
+    ni_zip(left, right, ni_minus)
 
 // Element-by-element product, broadcasting by `ndshape.broadcast`.
 // NOT the matrix product — that is `matmul`.
@@ -373,7 +465,7 @@ pub fn sub(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn mul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.mul")
+    ni_zip(left, right, ni_times)
 
 // Element-by-element quotient, TRUNCATED towards zero, broadcasting by
 // `ndshape.broadcast`.
@@ -396,7 +488,17 @@ pub fn mul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn div(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.div")
+    match ni_pair(left, right)
+        Err(e) => Err(e)
+        Ok(p)  =>
+            var out: [Int] = []
+            var i = 0
+            while i < list.len(p.left)
+                if p.right[i] == 0
+                    return Err(NdBadRange("an integer division by zero"))
+                out = list.push(out, p.left[i] / p.right[i])
+                i = i + 1
+            Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Element-by-element remainder, with the sign of the DIVIDEND, on the
 // same zero-divisor terms as `div`.
@@ -413,7 +515,17 @@ pub fn div(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn rem(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.rem")
+    match ni_pair(left, right)
+        Err(e) => Err(e)
+        Ok(p)  =>
+            var out: [Int] = []
+            var i = 0
+            while i < list.len(p.left)
+                if p.right[i] == 0
+                    return Err(NdBadRange("an integer remainder by zero"))
+                out = list.push(out, p.left[i] % p.right[i])
+                i = i + 1
+            Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Every element negated.
 //
@@ -426,7 +538,7 @@ pub fn rem(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn neg(a: NdInt) -> NdInt
-    todo("ndarray-nv.ndint.neg")
+    map(a, ni_negated)
 
 // Every element's magnitude.
 //
@@ -439,7 +551,7 @@ pub fn neg(a: NdInt) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn abs(a: NdInt) -> NdInt
-    todo("ndarray-nv.ndint.abs")
+    map(a, ni_magnitude)
 
 // Every element through a function of the caller's.
 //
@@ -455,7 +567,10 @@ pub fn abs(a: NdInt) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn map(a: NdInt, f: fn(Int) -> Int) -> NdInt
-    todo("ndarray-nv.ndint.map")
+    var out: [Int] = []
+    for v in ni_read(a)
+        out = list.push(out, f(v))
+    NdInt { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
 
 // Where two arrays are equal, broadcasting by `ndshape.broadcast`.
 //
@@ -474,7 +589,7 @@ pub fn map(a: NdInt, f: fn(Int) -> Int) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn eq(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndint.eq")
+    ni_compare(left, right, ni_is_eq)
 
 // Where two arrays differ, broadcasting by `ndshape.broadcast`.
 //
@@ -490,7 +605,7 @@ pub fn eq(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn ne(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndint.ne")
+    ni_compare(left, right, ni_is_ne)
 
 // Where `left` is below `right`, broadcasting by `ndshape.broadcast`.
 //
@@ -506,7 +621,7 @@ pub fn ne(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn lt(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndint.lt")
+    ni_compare(left, right, ni_is_lt)
 
 // Where `left` is at most `right`, broadcasting by
 // `ndshape.broadcast`.
@@ -523,7 +638,7 @@ pub fn lt(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn le(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndint.le")
+    ni_compare(left, right, ni_is_le)
 
 // Where `left` is above `right`, broadcasting by `ndshape.broadcast`.
 //
@@ -539,7 +654,7 @@ pub fn le(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn gt(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndint.gt")
+    ni_compare(left, right, ni_is_gt)
 
 // Where `left` is at least `right`, broadcasting by
 // `ndshape.broadcast`.
@@ -556,7 +671,7 @@ pub fn gt(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn ge(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndint.ge")
+    ni_compare(left, right, ni_is_ge)
 
 // The elements the mask picks, as a rank-1 array in row-major order.
 //
@@ -578,7 +693,18 @@ pub fn ge(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn select(a: NdInt, keep: NdMask) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.select")
+    let picked = ndbool.shape(keep)
+    if a.shape.dims != picked.dims
+        return Err(NdShapeMismatch(a.shape.dims, picked.dims))
+    let vals = ni_read(a)
+    let flags = ndbool.to_list(keep)
+    var out: [Int] = []
+    var i = 0
+    while i < list.len(vals)
+        if flags[i]
+            out = list.push(out, vals[i])
+        i = i + 1
+    Ok(NdInt { data: out, shape: ndshape.of_dims([list.len(out)]), offset: 0 })
 
 // The elements at these positions along one axis, in the order given.
 //
@@ -605,7 +731,41 @@ pub fn select(a: NdInt, keep: NdMask) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn take(a: NdInt, axis: Int, positions: [Int]) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.take")
+    let r = list.len(a.shape.dims)
+    if axis < 0 or axis >= r
+        return Err(NdAxisOutOfRange(axis, r))
+    for p in positions
+        if p < 0 or p >= a.shape.dims[axis]
+            return Err(NdIndexOutOfRange(positions, a.shape.dims))
+    // A gather is not expressible as strides, so the walk substitutes the
+    // caller's positions for the gathered axis and materialises.
+    var acc: [Int] = [a.offset]
+    var ax = 0
+    while ax < r
+        var next: [Int] = []
+        for base in acc
+            if ax == axis
+                for p in positions
+                    next = list.push(next, base + p * a.shape.strides[ax])
+            else
+                var k = 0
+                while k < a.shape.dims[ax]
+                    next = list.push(next, base + k * a.shape.strides[ax])
+                    k = k + 1
+        acc = next
+        ax = ax + 1
+    var dims: [Int] = []
+    var i = 0
+    while i < r
+        if i == axis
+            dims = list.push(dims, list.len(positions))
+        else
+            dims = list.push(dims, a.shape.dims[i])
+        i = i + 1
+    var out: [Int] = []
+    for o in acc
+        out = list.push(out, a.data[o])
+    Ok(NdInt { data: out, shape: ndshape.of_dims(dims), offset: 0 })
 
 // Every element added up.  The sum of nothing is 0.
 //
@@ -618,7 +778,10 @@ pub fn take(a: NdInt, axis: Int, positions: [Int]) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn sum(a: NdInt) -> Int
-    todo("ndarray-nv.ndint.sum")
+    var total = 0
+    for v in ni_read(a)
+        total = total + v
+    total
 
 // The smallest element.  `NdEmptyReduction` on an empty array.
 //
@@ -634,7 +797,10 @@ pub fn sum(a: NdInt) -> Int
 //         Err(e) => println(e.message())
 // ```
 pub fn min(a: NdInt) -> Result<Int, NdFault>
-    todo("ndarray-nv.ndint.min")
+    let vals = ni_read(a)
+    if list.len(vals) == 0
+        return Err(NdEmptyReduction("min"))
+    Ok(vals[ni_extreme(vals, true)])
 
 // The largest element.  `NdEmptyReduction` on an empty array.
 //
@@ -650,7 +816,10 @@ pub fn min(a: NdInt) -> Result<Int, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn max(a: NdInt) -> Result<Int, NdFault>
-    todo("ndarray-nv.ndint.max")
+    let vals = ni_read(a)
+    if list.len(vals) == 0
+        return Err(NdEmptyReduction("max"))
+    Ok(vals[ni_extreme(vals, false)])
 
 // The full index of the smallest element; the FIRST one on a tie.
 // `NdEmptyReduction` on an empty array.
@@ -667,7 +836,10 @@ pub fn max(a: NdInt) -> Result<Int, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn argmin(a: NdInt) -> Result<[Int], NdFault>
-    todo("ndarray-nv.ndint.argmin")
+    let vals = ni_read(a)
+    if list.len(vals) == 0
+        return Err(NdEmptyReduction("argmin"))
+    Ok(ni_unravel(a.shape.dims, ni_extreme(vals, true)))
 
 // The full index of the largest element; the FIRST one on a tie.
 // `NdEmptyReduction` on an empty array.
@@ -684,7 +856,10 @@ pub fn argmin(a: NdInt) -> Result<[Int], NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn argmax(a: NdInt) -> Result<[Int], NdFault>
-    todo("ndarray-nv.ndint.argmax")
+    let vals = ni_read(a)
+    if list.len(vals) == 0
+        return Err(NdEmptyReduction("argmax"))
+    Ok(ni_unravel(a.shape.dims, ni_extreme(vals, false)))
 
 // Sums along one axis, which is dropped.
 //
@@ -700,7 +875,16 @@ pub fn argmax(a: NdInt) -> Result<[Int], NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn sum_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.sum_axis")
+    match ndshape.drop_axis(a.shape, axis)
+        Err(e) => Err(e)
+        Ok(rest) =>
+            var out: [Int] = []
+            for lane in ni_lanes(a, axis)
+                var total = 0
+                for v in lane
+                    total = total + v
+                out = list.push(out, total)
+            Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Smallest elements along one axis, which is dropped.
 // `NdEmptyReduction` when that axis has extent 0.
@@ -717,7 +901,15 @@ pub fn sum_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn min_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.min_axis")
+    match ndshape.drop_axis(a.shape, axis)
+        Err(e) => Err(e)
+        Ok(rest) =>
+            if a.shape.dims[axis] == 0
+                return Err(NdEmptyReduction("min_axis"))
+            var out: [Int] = []
+            for lane in ni_lanes(a, axis)
+                out = list.push(out, lane[ni_extreme(lane, true)])
+            Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Largest elements along one axis, which is dropped.
 // `NdEmptyReduction` when that axis has extent 0.
@@ -734,7 +926,15 @@ pub fn min_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn max_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.max_axis")
+    match ndshape.drop_axis(a.shape, axis)
+        Err(e) => Err(e)
+        Ok(rest) =>
+            if a.shape.dims[axis] == 0
+                return Err(NdEmptyReduction("max_axis"))
+            var out: [Int] = []
+            for lane in ni_lanes(a, axis)
+                out = list.push(out, lane[ni_extreme(lane, false)])
+            Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // The inner product of two rank-1 arrays.  `NdNotMatrix` at any other
 // rank.
@@ -751,7 +951,22 @@ pub fn max_axis(a: NdInt, axis: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn dot(left: NdInt, right: NdInt) -> Result<Int, NdFault>
-    todo("ndarray-nv.ndint.dot")
+    let lr = list.len(left.shape.dims)
+    if lr != 1
+        return Err(NdNotMatrix("dot", lr))
+    let rr = list.len(right.shape.dims)
+    if rr != 1
+        return Err(NdNotMatrix("dot", rr))
+    if left.shape.dims[0] != right.shape.dims[0]
+        return Err(NdShapeMismatch(left.shape.dims, right.shape.dims))
+    let l = ni_read(left)
+    let r = ni_read(right)
+    var total = 0
+    var i = 0
+    while i < list.len(l)
+        total = total + l[i] * r[i]
+        i = i + 1
+    Ok(total)
 
 // The matrix product, on `ndfloat.matmul`'s rank rules.
 //
@@ -767,7 +982,48 @@ pub fn dot(left: NdInt, right: NdInt) -> Result<Int, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn matmul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndint.matmul")
+    let lr = list.len(left.shape.dims)
+    if lr < 1 or lr > 2
+        return Err(NdNotMatrix("matmul", lr))
+    let rr = list.len(right.shape.dims)
+    if rr < 1 or rr > 2
+        return Err(NdNotMatrix("matmul", rr))
+    // numpy's promotion: a rank-1 LEFT operand is one ROW, a rank-1 RIGHT
+    // operand is one COLUMN, and the promoted axis is dropped again from
+    // the answer.
+    var rows = 1
+    var inner = left.shape.dims[0]
+    if lr == 2
+        rows = left.shape.dims[0]
+        inner = left.shape.dims[1]
+    var cols = 1
+    if rr == 2
+        cols = right.shape.dims[1]
+    if inner != right.shape.dims[0]
+        return Err(NdShapeMismatch(left.shape.dims, right.shape.dims))
+    let l = ni_read(left)
+    let r = ni_read(right)
+    var out: [Int] = []
+    var i = 0
+    while i < rows
+        var j = 0
+        while j < cols
+            var total = 0
+            var p = 0
+            while p < inner
+                total = total + l[i * inner + p] * r[p * cols + j]
+                p = p + 1
+            out = list.push(out, total)
+            j = j + 1
+        i = i + 1
+    var dims: [Int] = [rows, cols]
+    if lr == 1 and rr == 1
+        dims = []
+    elif lr == 1
+        dims = [cols]
+    elif rr == 1
+        dims = [rows]
+    Ok(NdInt { data: out, shape: ndshape.of_dims(dims), offset: 0 })
 
 // Every element widened to a Float.
 //
@@ -784,4 +1040,195 @@ pub fn matmul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_float(a: NdInt) -> NdFloat
-    todo("ndarray-nv.ndint.to_float")
+    var out: [Float] = []
+    for v in ni_read(a)
+        out = list.push(out, int.to_float(v))
+    NdFloat { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
+
+// ── The module's own machinery ─────────────────────────────────────
+//
+// Everything below is private, and it MIRRORS `ndfloat`'s machinery
+// function for function — the same reason the public surface does.
+// The walk, the stretch and the pairing live once per module rather
+// than published from `ndshape`, because a `pub fn` added to a package
+// eight others depend on is a wider change than thirty duplicated
+// lines, and the day `NdArray<T>` is spellable the copies become one.
+
+// Every flat position this shape addresses, in row-major order, with
+// one axis left unexpanded.  `skip` of -1 expands every axis.
+fn ni_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
+    var acc: [Int] = [offset]
+    var ax = 0
+    while ax < list.len(s.dims)
+        if ax != skip
+            var next: [Int] = []
+            for base in acc
+                var k = 0
+                while k < s.dims[ax]
+                    next = list.push(next, base + k * s.strides[ax])
+                    k = k + 1
+            acc = next
+        ax = ax + 1
+    acc
+
+// Every element in row-major order, view or not.
+fn ni_read(a: NdInt) -> [Int]
+    var out: [Int] = []
+    for o in ni_walk(a.shape, a.offset, -1)
+        out = list.push(out, a.data[o])
+    out
+
+// One lane per element of the reduced array: the elements a reduction
+// along `axis` folds, in the result's row-major order.
+fn ni_lanes(a: NdInt, axis: Int) -> [[Int]]
+    let extent = a.shape.dims[axis]
+    let step = a.shape.strides[axis]
+    var out: [[Int]] = []
+    for base in ni_walk(a.shape, a.offset, axis)
+        var lane: [Int] = []
+        var k = 0
+        while k < extent
+            lane = list.push(lane, a.data[base + k * step])
+            k = k + 1
+        out = list.push(out, lane)
+    out
+
+// The strides that stretch `s` to `dims`, or why they do not.  A
+// stretched axis is a stride of 0; the rule is `ndshape.broadcast`'s.
+fn ni_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
+    let r = list.len(s.dims)
+    let n = list.len(dims)
+    if n < r
+        return Err(NdNotBroadcastable(s.dims, dims))
+    var strides: [Int] = []
+    var i = 0
+    while i < n
+        let si = i - (n - r)
+        var d = 1
+        var st = 0
+        if si >= 0
+            d = s.dims[si]
+            st = s.strides[si]
+        if d == dims[i]
+            strides = list.push(strides, st)
+        elif d == 1
+            strides = list.push(strides, 0)
+        else
+            return Err(NdNotBroadcastable(s.dims, dims))
+        i = i + 1
+    Ok(NdShape { dims: dims, strides: strides })
+
+// One operand stretched to a shape and read out flat.
+fn ni_spread(a: NdInt, dims: [Int]) -> Result<[Int], NdFault>
+    match ni_stretch(a.shape, dims)
+        Err(e) => Err(e)
+        Ok(s)  => Ok(ni_read(NdInt { data: a.data, shape: s, offset: a.offset }))
+
+// Two arrays read out over the shape they broadcast to.
+struct NiPair
+    left: [Int]
+    right: [Int]
+    dims: [Int]
+
+// Both operands stretched to their common shape and read out flat, so
+// every binary operation is a walk down two equal-length lists.
+fn ni_pair(left: NdInt, right: NdInt) -> Result<NiPair, NdFault>
+    match ndshape.broadcast(left.shape, right.shape)
+        Err(e) => Err(e)
+        Ok(bs) =>
+            match ni_spread(left, bs.dims)
+                Err(e) => Err(e)
+                Ok(l)  =>
+                    match ni_spread(right, bs.dims)
+                        Err(e) => Err(e)
+                        Ok(r)  => Ok(NiPair { left: l, right: r, dims: bs.dims })
+
+// The broadcast binary operation, once, for the three that cannot
+// fail element by element.  `div` and `rem` write their own loop,
+// because a zero divisor stops the call rather than the element.
+fn ni_zip(left: NdInt, right: NdInt, f: fn(Int, Int) -> Int) -> Result<NdInt, NdFault>
+    match ni_pair(left, right)
+        Err(e) => Err(e)
+        Ok(p)  =>
+            var out: [Int] = []
+            var i = 0
+            while i < list.len(p.left)
+                out = list.push(out, f(p.left[i], p.right[i]))
+                i = i + 1
+            Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
+
+// The broadcast comparison, once, for all six of them.
+fn ni_compare(left: NdInt, right: NdInt, f: fn(Int, Int) -> Bool) -> Result<NdMask, NdFault>
+    match ni_pair(left, right)
+        Err(e) => Err(e)
+        Ok(p)  =>
+            var out: [Bool] = []
+            var i = 0
+            while i < list.len(p.left)
+                out = list.push(out, f(p.left[i], p.right[i]))
+                i = i + 1
+            Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
+
+// The position of the smallest (or largest) element, FIRST on a tie.
+// There is no NaN among the integers, so this is the plain scan that
+// `ndfloat`'s counterpart would be without one.
+fn ni_extreme(vals: [Int], smallest: Bool) -> Int
+    var at = 0
+    var best = vals[0]
+    var i = 1
+    while i < list.len(vals)
+        var better = vals[i] > best
+        if smallest
+            better = vals[i] < best
+        if better
+            best = vals[i]
+            at = i
+        i = i + 1
+    at
+
+// The full index of a row-major position.  Only ever called on a
+// NON-EMPTY array, so no stride here is 0.
+fn ni_unravel(dims: [Int], flat: Int) -> [Int]
+    let s = ndshape.of_dims(dims)
+    var out: [Int] = []
+    var rest = flat
+    var i = 0
+    while i < list.len(dims)
+        out = list.push(out, rest / s.strides[i])
+        rest = rest % s.strides[i]
+        i = i + 1
+    out
+
+// The operations as values `ni_zip`, `ni_compare` and `map` take.
+fn ni_plus(x: Int, y: Int) -> Int
+    x + y
+
+fn ni_minus(x: Int, y: Int) -> Int
+    x - y
+
+fn ni_times(x: Int, y: Int) -> Int
+    x * y
+
+fn ni_negated(x: Int) -> Int
+    0 - x
+
+fn ni_magnitude(x: Int) -> Int
+    math.abs_int(x)
+
+fn ni_is_eq(x: Int, y: Int) -> Bool
+    x == y
+
+fn ni_is_ne(x: Int, y: Int) -> Bool
+    x != y
+
+fn ni_is_lt(x: Int, y: Int) -> Bool
+    x < y
+
+fn ni_is_le(x: Int, y: Int) -> Bool
+    x <= y
+
+fn ni_is_gt(x: Int, y: Int) -> Bool
+    x > y
+
+fn ni_is_ge(x: Int, y: Int) -> Bool
+    x >= y

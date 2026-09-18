@@ -60,7 +60,14 @@ pub struct NdMask
 //         Err(e) => println(e.message())
 // ```
 pub fn of_list(data: [Bool], dims: [Int]) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndbool.of_list")
+    for d in dims
+        if d < 0
+            return Err(NdBadRange("a shape with a negative dimension"))
+    let s = ndshape.of_dims(dims)
+    let want = ndshape.size(s)
+    if want != list.len(data)
+        return Err(NdSizeMismatch(want, list.len(data)))
+    Ok(NdMask { data: data, shape: s, offset: 0 })
 
 // A mask of this shape with every position set the same way.
 //
@@ -73,7 +80,16 @@ pub fn of_list(data: [Bool], dims: [Int]) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn filled(dims: [Int], value: Bool) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndbool.filled")
+    for d in dims
+        if d < 0
+            return Err(NdBadRange("a shape with a negative dimension"))
+    let s = ndshape.of_dims(dims)
+    var out: [Bool] = []
+    var i = 0
+    while i < ndshape.size(s)
+        out = list.push(out, value)
+        i = i + 1
+    Ok(NdMask { data: out, shape: s, offset: 0 })
 
 // This mask's layout.
 //
@@ -86,7 +102,7 @@ pub fn filled(dims: [Int], value: Bool) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn shape(m: NdMask) -> NdShape
-    todo("ndarray-nv.ndbool.shape")
+    m.shape
 
 // How many positions this mask has, true and false together.
 //
@@ -99,7 +115,7 @@ pub fn shape(m: NdMask) -> NdShape
 //         Err(e) => println(e.message())
 // ```
 pub fn size(m: NdMask) -> Int
-    todo("ndarray-nv.ndbool.size")
+    ndshape.size(m.shape)
 
 // The truth at one full index.
 //
@@ -115,7 +131,9 @@ pub fn size(m: NdMask) -> Int
 //         Err(e) => println(e.message())
 // ```
 pub fn at(m: NdMask, index: [Int]) -> Result<Bool, NdFault>
-    todo("ndarray-nv.ndbool.at")
+    match ndshape.flat_index(m.shape, index)
+        Err(e) => Err(e)
+        Ok(f)  => Ok(m.data[m.offset + f])
 
 // Every truth in row-major order, view or not.
 //
@@ -132,7 +150,7 @@ pub fn at(m: NdMask, index: [Int]) -> Result<Bool, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(m: NdMask) -> [Bool]
-    todo("ndarray-nv.ndbool.to_list")
+    nb_read(m)
 
 // Whether every position is true.
 //
@@ -149,7 +167,10 @@ pub fn to_list(m: NdMask) -> [Bool]
 //         Err(e) => println(e.message())
 // ```
 pub fn all(m: NdMask) -> Bool
-    todo("ndarray-nv.ndbool.all")
+    for v in nb_read(m)
+        if not v
+            return false
+    true
 
 // Whether any position is true.
 //
@@ -164,7 +185,10 @@ pub fn all(m: NdMask) -> Bool
 //         Err(e) => println(e.message())
 // ```
 pub fn any(m: NdMask) -> Bool
-    todo("ndarray-nv.ndbool.any")
+    for v in nb_read(m)
+        if v
+            return true
+    false
 
 // How many positions are true.
 //
@@ -180,7 +204,11 @@ pub fn any(m: NdMask) -> Bool
 //         Err(e) => println(e.message())
 // ```
 pub fn count(m: NdMask) -> Int
-    todo("ndarray-nv.ndbool.count")
+    var n = 0
+    for v in nb_read(m)
+        if v
+            n = n + 1
+    n
 
 // How many positions are true along one axis, as an `NdInt` of one
 // lower rank.
@@ -197,7 +225,21 @@ pub fn count(m: NdMask) -> Int
 //         Err(e) => println(e.message())
 // ```
 pub fn count_axis(m: NdMask, axis: Int) -> Result<NdInt, NdFault>
-    todo("ndarray-nv.ndbool.count_axis")
+    match ndshape.drop_axis(m.shape, axis)
+        Err(e) => Err(e)
+        Ok(rest) =>
+            let extent = m.shape.dims[axis]
+            let step = m.shape.strides[axis]
+            var out: [Int] = []
+            for base in nb_walk(m.shape, m.offset, axis)
+                var c = 0
+                var k = 0
+                while k < extent
+                    if m.data[base + k * step]
+                        c = c + 1
+                    k = k + 1
+                out = list.push(out, c)
+            Ok(NdInt { data: out, shape: ndshape.of_dims(rest.dims), offset: 0 })
 
 // Position-by-position conjunction, broadcasting.  Named `both`
 // because `and` is a reserved word (SPEC § 1.3).
@@ -216,7 +258,15 @@ pub fn count_axis(m: NdMask, axis: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn both(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndbool.both")
+    match nb_pair(left, right)
+        Err(e) => Err(e)
+        Ok(p)  =>
+            var out: [Bool] = []
+            var i = 0
+            while i < list.len(p.left)
+                out = list.push(out, p.left[i] and p.right[i])
+                i = i + 1
+            Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Position-by-position disjunction, broadcasting by
 // `ndshape.broadcast`.  Named `either` because `or` is reserved.
@@ -233,7 +283,15 @@ pub fn both(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn either(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndbool.either")
+    match nb_pair(left, right)
+        Err(e) => Err(e)
+        Ok(p)  =>
+            var out: [Bool] = []
+            var i = 0
+            while i < list.len(p.left)
+                out = list.push(out, p.left[i] or p.right[i])
+                i = i + 1
+            Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Position-by-position negation, into a fresh packed buffer: there is
 // no stride that means "negated".  Named `invert` because `not` is
@@ -248,7 +306,10 @@ pub fn either(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn invert(m: NdMask) -> NdMask
-    todo("ndarray-nv.ndbool.invert")
+    var out: [Bool] = []
+    for v in nb_read(m)
+        out = list.push(out, not v)
+    NdMask { data: out, shape: ndshape.of_dims(m.shape.dims), offset: 0 }
 
 // The mask with two axes exchanged — free, like every other view.
 //
@@ -264,7 +325,9 @@ pub fn invert(m: NdMask) -> NdMask
 //         Err(e) => println(e.message())
 // ```
 pub fn swap_axes(m: NdMask, first: Int, second: Int) -> Result<NdMask, NdFault>
-    todo("ndarray-nv.ndbool.swap_axes")
+    match ndshape.swap_axes(m.shape, first, second)
+        Err(e) => Err(e)
+        Ok(s)  => Ok(NdMask { data: m.data, shape: s, offset: m.offset })
 
 // The same mask over a fresh, contiguous, exactly-sized buffer.
 //
@@ -280,7 +343,9 @@ pub fn swap_axes(m: NdMask, first: Int, second: Int) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn pack(m: NdMask) -> NdMask
-    todo("ndarray-nv.ndbool.pack")
+    if m.offset == 0 and ndshape.is_packed(m.shape) and list.len(m.data) == ndshape.size(m.shape)
+        return m
+    NdMask { data: nb_read(m), shape: ndshape.of_dims(m.shape.dims), offset: 0 }
 
 // The mask as 1s and 0s, so it can be summed, grouped or joined.
 //
@@ -293,7 +358,13 @@ pub fn pack(m: NdMask) -> NdMask
 //         Err(e) => println(e.message())
 // ```
 pub fn to_int(m: NdMask) -> NdInt
-    todo("ndarray-nv.ndbool.to_int")
+    var out: [Int] = []
+    for v in nb_read(m)
+        if v
+            out = list.push(out, 1)
+        else
+            out = list.push(out, 0)
+    NdInt { data: out, shape: ndshape.of_dims(m.shape.dims), offset: 0 }
 
 // Non-zero is true, zero is false — the inverse of `to_int`.
 //
@@ -306,4 +377,95 @@ pub fn to_int(m: NdMask) -> NdInt
 //         Err(e) => println(e.message())
 // ```
 pub fn of_int(a: NdInt) -> NdMask
-    todo("ndarray-nv.ndbool.of_int")
+    var out: [Bool] = []
+    for v in ndint.to_list(a)
+        out = list.push(out, v != 0)
+    NdMask { data: out, shape: ndshape.of_dims(a.shape.dims), offset: 0 }
+
+// ── The module's own machinery ─────────────────────────────────────
+//
+// Three private helpers, and they are private on purpose: they are the
+// SAME three `ndfloat` and `ndint` carry, written out once per module
+// rather than published from `ndshape`, because adding a `pub fn` to
+// a package eight others already depend on is a wider change than
+// thirty duplicated lines.
+
+// Every flat position this mask's shape addresses, in row-major order,
+// skipping the expansion of one axis.
+//
+// `skip` of -1 expands every axis and is therefore the whole array;
+// any other value leaves that axis unexpanded, so the answer is one
+// BASE position per element of the array with that axis dropped —
+// which is exactly what a reduction along it walks.
+fn nb_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
+    var acc: [Int] = [offset]
+    var ax = 0
+    while ax < list.len(s.dims)
+        if ax != skip
+            var next: [Int] = []
+            for base in acc
+                var k = 0
+                while k < s.dims[ax]
+                    next = list.push(next, base + k * s.strides[ax])
+                    k = k + 1
+            acc = next
+        ax = ax + 1
+    acc
+
+// Every truth in row-major order, view or not.
+fn nb_read(m: NdMask) -> [Bool]
+    var out: [Bool] = []
+    for o in nb_walk(m.shape, m.offset, -1)
+        out = list.push(out, m.data[o])
+    out
+
+// The strides that stretch `s` to `dims`, or why they do not.
+//
+// A stretched axis is a stride of 0 — that is the whole of what
+// broadcasting costs — and an axis off the front of the shorter shape
+// is stretched too.  The rule it enforces is `ndshape.broadcast`'s.
+fn nb_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
+    let r = list.len(s.dims)
+    let n = list.len(dims)
+    if n < r
+        return Err(NdNotBroadcastable(s.dims, dims))
+    var strides: [Int] = []
+    var i = 0
+    while i < n
+        let si = i - (n - r)
+        var d = 1
+        var st = 0
+        if si >= 0
+            d = s.dims[si]
+            st = s.strides[si]
+        if d == dims[i]
+            strides = list.push(strides, st)
+        elif d == 1
+            strides = list.push(strides, 0)
+        else
+            return Err(NdNotBroadcastable(s.dims, dims))
+        i = i + 1
+    Ok(NdShape { dims: dims, strides: strides })
+
+// Two masks read out over the shape they broadcast to.
+struct NbPair
+    left: [Bool]
+    right: [Bool]
+    dims: [Int]
+
+// Both operands stretched to their common shape and read out flat, so
+// a combination is a walk down two equal-length lists.
+fn nb_pair(left: NdMask, right: NdMask) -> Result<NbPair, NdFault>
+    match ndshape.broadcast(left.shape, right.shape)
+        Err(e) => Err(e)
+        Ok(bs) =>
+            match nb_stretch(left.shape, bs.dims)
+                Err(e) => Err(e)
+                Ok(ls) =>
+                    match nb_stretch(right.shape, bs.dims)
+                        Err(e) => Err(e)
+                        Ok(rs) =>
+                            Ok(NbPair {
+                                left: nb_read(NdMask { data: left.data, shape: ls, offset: left.offset }),
+                                right: nb_read(NdMask { data: right.data, shape: rs, offset: right.offset }),
+                                dims: bs.dims })
