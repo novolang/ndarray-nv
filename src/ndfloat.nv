@@ -149,7 +149,7 @@ pub fn filled(dims: [Int], value: Float) -> Result<NdFloat, NdFault>
         if d < 0
             return Err(NdBadRange("a shape with a negative dimension"))
     let s = ndshape.of_dims(dims)
-    let out: [Float] = list.map(list.range(0, ndshape.size(s)), i => value)
+    let out: [Float] = list.map(0..ndshape.size(s), i => value)
     Ok(NdFloat { data: out, shape: s, offset: 0 })
 
 // The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
@@ -181,7 +181,7 @@ pub fn arange(start: Float, stop: Float, step: Float) -> Result<NdFloat, NdFault
     // is `start + i*step` rather than an accumulation, so the drift over
     // a long range is one rounding rather than n of them.
     let n = float.to_int(math.ceil((stop - start) / step))
-    let out: [Float] = list.map(list.range(0, n), i => start + int.to_float(i) * step)
+    let out: [Float] = list.map(0..n, i => start + int.to_float(i) * step)
     Ok(NdFloat { data: out, shape: ndshape.of_dims([n]), offset: 0 })
 
 // `count` evenly spaced numbers from `start` to `stop`, both INCLUDED.
@@ -1300,7 +1300,7 @@ fn nf_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
             // far by that axis's extent, which is what `flat_map` is.
             let extent = s.dims[ax]
             let step = s.strides[ax]
-            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
+            acc = list.flat_map(acc, base => list.map(0..extent, k => base + k * step))
     acc
 
 // Every element in row-major order, view or not.
@@ -1318,7 +1318,7 @@ fn nf_lanes(a: NdFloat, axis: Int) -> [[Float]]
     let extent = a.shape.dims[axis]
     let step = a.shape.strides[axis]
     list.map(nf_walk(a.shape, a.offset, axis),
-        base => list.map(list.range(0, extent), k => a.data[base + k * step]))
+        base => list.map(0..extent, k => a.data[base + k * step]))
 
 // The strides that stretch `s` to `dims`, or why they do not.
 //
@@ -1391,7 +1391,7 @@ fn nf_zip(left: NdFloat, right: NdFloat, f: fn(Float, Float) -> Float) -> Result
     match nf_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            let out: [Float] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
+            let out: [Float] = list.map(0..list.len(p.left), i => f(p.left[i], p.right[i]))
             Ok(NdFloat { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The broadcast comparison, once, for all six of them.
@@ -1399,7 +1399,7 @@ fn nf_compare(left: NdFloat, right: NdFloat, f: fn(Float, Float) -> Bool) -> Res
     match nf_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            let out: [Bool] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
+            let out: [Bool] = list.map(0..list.len(p.left), i => f(p.left[i], p.right[i]))
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The position of the smallest (or largest) element, SKIPPING NaN and

@@ -84,7 +84,7 @@ pub fn filled(dims: [Int], value: Bool) -> Result<NdMask, NdFault>
         if d < 0
             return Err(NdBadRange("a shape with a negative dimension"))
     let s = ndshape.of_dims(dims)
-    let out: [Bool] = list.map(list.range(0, ndshape.size(s)), i => value)
+    let out: [Bool] = list.map(0..ndshape.size(s), i => value)
     Ok(NdMask { data: out, shape: s, offset: 0 })
 
 // This mask's layout.
@@ -255,7 +255,7 @@ pub fn both(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
     match nb_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            let out: [Bool] = list.map(list.range(0, list.len(p.left)), i => p.left[i] and p.right[i])
+            let out: [Bool] = list.map(0..list.len(p.left), i => p.left[i] and p.right[i])
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Position-by-position disjunction, broadcasting by
@@ -276,7 +276,7 @@ pub fn either(left: NdMask, right: NdMask) -> Result<NdMask, NdFault>
     match nb_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            let out: [Bool] = list.map(list.range(0, list.len(p.left)), i => p.left[i] or p.right[i])
+            let out: [Bool] = list.map(0..list.len(p.left), i => p.left[i] or p.right[i])
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // Position-by-position negation, into a fresh packed buffer: there is
@@ -387,7 +387,7 @@ fn nb_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
             // far by that axis's extent, which is what `flat_map` is.
             let extent = s.dims[ax]
             let step = s.strides[ax]
-            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
+            acc = list.flat_map(acc, base => list.map(0..extent, k => base + k * step))
     acc
 
 // Every truth in row-major order, view or not.

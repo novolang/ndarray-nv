@@ -40,7 +40,7 @@ fn say(e: ndfault.NdFault) -> Str
 // position, so both operands are dense, neither is a special case,
 // and the run is the same run every time.
 fn dense(n: Int, salt: Int) -> NdFloat
-    let cells = list.map(list.range(0, n * n),
+    let cells = list.map(0..n * n,
         i => int.to_float((i * 7919 + salt * 104729 + 12345) % 1000 - 500) / 100.0)
     match ndfloat.of_list(cells, [n, n])
         Ok(a)  => a
@@ -48,7 +48,7 @@ fn dense(n: Int, salt: Int) -> NdFloat
 
 // The same matrix as integers, for the other array's baseline.
 fn dense_int(n: Int, salt: Int) -> NdInt
-    let cells = list.map(list.range(0, n * n),
+    let cells = list.map(0..n * n,
         i => (i * 7919 + salt * 104729 + 12345) % 1000 - 500)
     match ndint.of_list(cells, [n, n])
         Ok(a)  => a

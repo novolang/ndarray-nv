@@ -47,12 +47,12 @@ fn hash(case: Int, slot: Int) -> Int
 // A shape of rank 1 to 3 with extents 1 to 4.
 fn gen_dims(case: Int) -> [Int]
     let rank = hash(case, 0) % 3 + 1
-    list.map(list.range(0, rank), i => hash(case, i + 1) % 4 + 1)
+    list.map(0..rank, i => hash(case, i + 1) % 4 + 1)
 
 // `n` integers in [-9, 9], which keeps every product below the
 // overflow trap even through a chain of matrix multiplies.
 fn gen_ints(case: Int, slot: Int, n: Int) -> [Int]
-    list.map(list.range(0, n), i => hash(case, slot + i) % 19 - 9)
+    list.map(0..n, i => hash(case, slot + i) % 19 - 9)
 
 fn product(dims: [Int]) -> Int
     var n = 1

@@ -127,7 +127,7 @@ pub fn filled(dims: [Int], value: Int) -> Result<NdInt, NdFault>
         if d < 0
             return Err(NdBadRange("a shape with a negative dimension"))
     let s = ndshape.of_dims(dims)
-    let out: [Int] = list.map(list.range(0, ndshape.size(s)), i => value)
+    let out: [Int] = list.map(0..ndshape.size(s), i => value)
     Ok(NdInt { data: out, shape: s, offset: 0 })
 
 // The rank-1 array `start, start+step, …`, stopping BEFORE `stop`.
@@ -160,7 +160,7 @@ pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
         span = start - stop
         width = 0 - step
     let n = (span + width - 1) / width
-    let out: [Int] = list.map(list.range(0, n), i => start + i * step)
+    let out: [Int] = list.map(0..n, i => start + i * step)
     Ok(NdInt { data: out, shape: ndshape.of_dims([n]), offset: 0 })
 
 // This array's layout.
@@ -728,7 +728,7 @@ pub fn take(a: NdInt, axis: Int, positions: [Int]) -> Result<NdInt, NdFault>
             acc = list.flat_map(acc, base => list.map(positions, p => base + p * step))
         else
             let extent = a.shape.dims[ax]
-            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
+            acc = list.flat_map(acc, base => list.map(0..extent, k => base + k * step))
     var dims: [Int] = []
     for i in 0..r
         if i == axis
@@ -1021,7 +1021,7 @@ fn ni_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
             // far by that axis's extent, which is what `flat_map` is.
             let extent = s.dims[ax]
             let step = s.strides[ax]
-            acc = list.flat_map(acc, base => list.map(list.range(0, extent), k => base + k * step))
+            acc = list.flat_map(acc, base => list.map(0..extent, k => base + k * step))
     acc
 
 // Every element in row-major order, view or not.
@@ -1039,7 +1039,7 @@ fn ni_lanes(a: NdInt, axis: Int) -> [[Int]]
     let extent = a.shape.dims[axis]
     let step = a.shape.strides[axis]
     list.map(ni_walk(a.shape, a.offset, axis),
-        base => list.map(list.range(0, extent), k => a.data[base + k * step]))
+        base => list.map(0..extent, k => a.data[base + k * step]))
 
 // The strides that stretch `s` to `dims`, or why they do not.  A
 // stretched axis is a stride of 0; the rule is `ndshape.broadcast`'s.
@@ -1111,7 +1111,7 @@ fn ni_zip(left: NdInt, right: NdInt, f: fn(Int, Int) -> Int) -> Result<NdInt, Nd
     match ni_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            let out: [Int] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
+            let out: [Int] = list.map(0..list.len(p.left), i => f(p.left[i], p.right[i]))
             Ok(NdInt { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The broadcast comparison, once, for all six of them.
@@ -1119,7 +1119,7 @@ fn ni_compare(left: NdInt, right: NdInt, f: fn(Int, Int) -> Bool) -> Result<NdMa
     match ni_pair(left, right)
         Err(e) => Err(e)
         Ok(p)  =>
-            let out: [Bool] = list.map(list.range(0, list.len(p.left)), i => f(p.left[i], p.right[i]))
+            let out: [Bool] = list.map(0..list.len(p.left), i => f(p.left[i], p.right[i]))
             Ok(NdMask { data: out, shape: ndshape.of_dims(p.dims), offset: 0 })
 
 // The position of the smallest (or largest) element, FIRST on a tie.
