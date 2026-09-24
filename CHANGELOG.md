@@ -5,6 +5,25 @@ All notable changes to ndarray-nv are recorded here. The format is
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.2 — 2026-09-24
+
+The package builds under the list rule of the next toolchain, where a
+list is one list under every name that holds it and a write into it
+goes through a `var` name.  No declaration changed, and nothing changes
+under 0.9.2.
+
+### Changed
+
+- `ndshape.reverse_axes` builds the reversed dims and strides with
+  `list.rev`, which answers a new list.  It used `list.reverse`, which
+  under the next toolchain reverses the list it is given, so a
+  transpose would have reversed the shape of the array it was taken
+  from as well.
+- `ndshape.of_dims` reverses its own strides list in a statement of its
+  own before it builds the shape.
+- Two property tests read a list again after building a longer or
+  reversed one from it, and now use `list.rev` and `list.concat`.
+
 ## 0.1.1 — 2026-09-18
 
 The documentation and comments in plain prose; no signature changed.

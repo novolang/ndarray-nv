@@ -174,7 +174,7 @@ fn run_laws(cases: Int) -> Report
         // answer comes from.
         let t = ndint.transpose(a)
         r = check(r, ndint.to_list(ndint.transpose(t)) == flat)
-        r = check(r, ndint.shape(t).dims == list.reverse(dims))
+        r = check(r, ndint.shape(t).dims == list.rev(dims))
         r = check(r, list.len(t.data) == list.len(a.data))
         r = check(r, ndint.size(ndint.pack(t)) == n)
 
@@ -400,7 +400,7 @@ fn run_laws(cases: Int) -> Report
         match ndint.broadcast_to(a, list.append([2], dims))
             Ok(b)  =>
                 r = check(r, ndint.size(b) == 2 * n)
-                r = check(r, ndint.to_list(b) == list.append(flat, flat))
+                r = check(r, ndint.to_list(b) == list.concat(flat, flat))
                 r = check(r, list.len(b.data) == list.len(a.data))
             Err(e) =>
                 r = failed(r, e)

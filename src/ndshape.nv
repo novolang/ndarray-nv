@@ -93,7 +93,8 @@ pub fn of_dims(dims: [Int]) -> NdShape
         strides = list.push(strides, acc)
         acc = acc * dims[i]
         i = i - 1
-    NdShape { dims: dims, strides: list.reverse(strides) }
+    strides = list.reverse(strides)
+    NdShape { dims: dims, strides: strides }
 
 // The shape of a scalar: rank 0, one element, no axes.
 //
@@ -286,7 +287,7 @@ pub fn swap_axes(s: NdShape, first: Int, second: Int) -> Result<NdShape, NdFault
 //     println("${ndshape.reverse_axes(ndshape.of_dims([2, 3])).dims}")
 // ```
 pub fn reverse_axes(s: NdShape) -> NdShape
-    NdShape { dims: list.reverse(s.dims), strides: list.reverse(s.strides) }
+    NdShape { dims: list.rev(s.dims), strides: list.rev(s.strides) }
 
 // The shape with one axis dropped, as indexing a single position along
 // that axis leaves it.
