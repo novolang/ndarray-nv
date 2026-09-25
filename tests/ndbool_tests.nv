@@ -173,11 +173,12 @@ fn test_a_mask_copies_the_lists_it_is_built_from() [io]
 
 @test
 fn test_a_mask_hands_out_copies() [io]
-    test.case("a write into the answered shape does not reach the mask")
+    // The shape's lists and a fault's dims are fields that are not
+    // `var`, so the next Novo release refuses any write into them at
+    // compile time, and a test that writes into one no longer builds.
+    // `shape` and every fault still hand out copies for the release
+    // before it, which accepts such a write.
     let m = mat22()
-    var dims = ndbool.shape(m).dims
-    dims[0] = 5
-    test.assert(ndbool.shape(m).dims == [2, 2])
 
     test.case("a write into the answered list does not reach the buffer")
     let before = ndbool.to_list(m)

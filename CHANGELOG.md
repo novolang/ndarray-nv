@@ -5,6 +5,20 @@ All notable changes to ndarray-nv are recorded here. The format is
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.4 — 2026-09-25
+
+The internal read that lists an array's elements in row-major order
+copies the buffer of a packed array, where it used to answer the buffer
+itself.  The buffer is shared with every view of it.  The next Novo
+release refuses a function that answers a list it was only given to
+read, and a copy is what the functions built on this read need.
+`to_list` no longer copies a second time, so it costs what it did.  No
+signature changed, and every answer is what 0.1.3 gave.
+
+- Three tests stop writing into the lists of an answered shape and of a
+  fault.  Those lists are fields that are not `var`, so the next
+  release refuses the write when the test is compiled.
+
 ## 0.1.3 — 2026-09-25
 
 Under the 0.10.0 toolchain a list is one list under every name that

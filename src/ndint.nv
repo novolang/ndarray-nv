@@ -275,8 +275,8 @@ pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(a: NdInt) -> [Int]
-    // The packed case of `ni_read` hands back the buffer itself.
-    list.clone(ni_read(a))
+    // `ni_read` answers a new list in every case.
+    ni_read(a)
 
 // The same elements under a different shape.  A view when the array is
 // packed, and a copy when it is not.
@@ -1062,9 +1062,12 @@ fn ni_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
 fn ni_read(a: NdInt) -> [Int]
     // A packed array's buffer, read in order from its offset, is
     // already its elements in row-major order, as `ndshape.is_packed`
-    // says.  The common case hands the buffer back and walks nothing.
+    // says.  The common case copies the buffer in one pass and walks
+    // nothing.  A copy rather than the buffer itself, because the
+    // buffer is shared with every view of it, and a caller may write
+    // into the list this answers.
     if a.offset == 0 and ndshape.is_packed(a.shape) and list.len(a.data) == ndshape.size(a.shape)
-        return a.data
+        return list.clone(a.data)
     list.map(ni_walk(a.shape, a.offset, -1), o => a.data[o])
 
 // The elements a reduction along `axis` folds, one group per element

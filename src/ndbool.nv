@@ -156,8 +156,8 @@ pub fn at(m: NdMask, index: [Int]) -> Result<Bool, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(m: NdMask) -> [Bool]
-    // The packed case of `nb_read` hands back the buffer itself.
-    list.clone(nb_read(m))
+    // `nb_read` answers a new list in every case.
+    nb_read(m)
 
 // Whether every position is true.
 //
@@ -409,9 +409,12 @@ fn nb_walk(s: NdShape, offset: Int, skip: Int) -> [Int]
 fn nb_read(m: NdMask) -> [Bool]
     // A packed array's buffer, read in order from its offset, is
     // already its elements in row-major order, as `ndshape.is_packed`
-    // says.  The common case hands the buffer back and walks nothing.
+    // says.  The common case copies the buffer in one pass and walks
+    // nothing.  A copy rather than the buffer itself, because the
+    // buffer is shared with every view of it, and a caller may write
+    // into the list this answers.
     if m.offset == 0 and ndshape.is_packed(m.shape) and list.len(m.data) == ndshape.size(m.shape)
-        return m.data
+        return list.clone(m.data)
     list.map(nb_walk(m.shape, m.offset, -1), o => m.data[o])
 
 // Two masks read out over the shape they broadcast to.
