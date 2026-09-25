@@ -13,7 +13,9 @@
 // mistake about dimensions, and a message that does not print the
 // dimensions sends the reader back to the source to guess which of the
 // four arrays in the expression was the wrong one.  `message` prints
-// both sides.
+// both sides.  A variant that carries an array's dims carries a copy
+// of them, so a caller who keeps the fault does not hold the array's
+// own list.
 //
 // Every variant name carries the `Nd` prefix.  An enum variant is
 // constructed by its bare name across the whole assembly, so

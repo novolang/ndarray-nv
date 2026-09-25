@@ -33,9 +33,11 @@
 //
 // `reshape` of a packed array, `transpose`, `swap_axes`, `slice_axis`,
 // `index_axis` and `broadcast_to` are views.  A view is a new shape
-// over the same buffer.  It is free, and it is safe because a
-// novo-lang list is a value that nobody can write through.  Everything
-// else materialises a new buffer, and `pack` is the deliberate copy.
+// over the same buffer.  It is free, and it is safe because nothing in
+// the package writes into a buffer and no caller is handed one: an
+// array copies the lists it is built from and the lists it hands out.
+// Everything else materialises a new buffer, and `pack` is the
+// deliberate copy.
 // `ndshape`'s module comment carries the argument.
 //
 // Nothing here writes in place.  `with` answers a new array, and there
@@ -72,6 +74,10 @@ pub struct NdFloat
 // `data`, and `NdBadRange` for a negative dimension.  The result is
 // packed, so `to_list` gives back what was passed in.
 //
+// The array keeps its own copies of `data` and `dims`, as numpy's
+// `np.array` copies a list, so a later write into either list does not
+// reach the array.
+//
 // ```novo
 // use ndfloat
 //
@@ -88,7 +94,7 @@ pub fn of_list(data: [Float], dims: [Int]) -> Result<NdFloat, NdFault>
     let want = ndshape.size(s)
     if want != list.len(data)
         return Err(NdSizeMismatch(want, list.len(data)))
-    Ok(NdFloat { data: data, shape: s, offset: 0 })
+    Ok(NdFloat { data: list.clone(data), shape: s, offset: 0 })
 
 // The rank-0 array holding one number.
 //
@@ -107,6 +113,8 @@ pub fn scalar(value: Float) -> NdFloat
 
 // An array of this shape, every element 0.0.
 //
+// The array keeps a copy of `dims`.
+//
 // ```novo
 // use ndfloat
 //
@@ -120,6 +128,8 @@ pub fn zeros(dims: [Int]) -> Result<NdFloat, NdFault>
 
 // An array of this shape, every element 1.0.
 //
+// The array keeps a copy of `dims`.
+//
 // ```novo
 // use ndfloat
 //
@@ -132,6 +142,8 @@ pub fn ones(dims: [Int]) -> Result<NdFloat, NdFault>
     filled(dims, 1.0)
 
 // An array of this shape, every element the same number.
+//
+// The array keeps a copy of `dims`.
 //
 // ```novo
 // use ndfloat
@@ -240,6 +252,8 @@ pub fn eye(n: Int) -> Result<NdFloat, NdFault>
 
 // This array's layout.
 //
+// Answers a copy; the array keeps its own lists.
+//
 // ```novo
 // use ndfloat
 //
@@ -249,7 +263,7 @@ pub fn eye(n: Int) -> Result<NdFloat, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn shape(a: NdFloat) -> NdShape
-    a.shape
+    NdShape { dims: list.clone(a.shape.dims), strides: list.clone(a.shape.strides) }
 
 // How many axes this array has.
 //
@@ -340,6 +354,8 @@ pub fn with(a: NdFloat, index: [Int], value: Float) -> Result<NdFloat, NdFault>
 // broadcast array.  A broadcast array's list repeats the stretched
 // element, which is what a stretched axis means.
 //
+// Answers a new list every time; the array keeps its own buffer.
+//
 // ```novo
 // use ndfloat
 //
@@ -349,7 +365,8 @@ pub fn with(a: NdFloat, index: [Int], value: Float) -> Result<NdFloat, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(a: NdFloat) -> [Float]
-    nf_read(a)
+    // The packed case of `nf_read` hands back the buffer itself.
+    list.clone(nf_read(a))
 
 // The same elements under a different shape.
 //
@@ -357,6 +374,9 @@ pub fn to_list(a: NdFloat) -> [Float]
 // copy when it is not.  No set of strides reads a gapped buffer in a
 // different rank.  `NdSizeMismatch` when the new dims describe a
 // different number of elements.
+//
+// The array keeps a copy of `dims`.  A view shares `a`'s buffer, which
+// nothing in the package writes into and no caller is handed.
 //
 // ```novo
 // use ndfloat
@@ -386,6 +406,9 @@ pub fn reshape(a: NdFloat, dims: [Int]) -> Result<NdFloat, NdFault>
 // For a matrix this is the transpose.  For rank 0 and rank 1 it is the
 // array unchanged, which is numpy's answer.
 //
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
+//
 // ```novo
 // use ndfloat
 //
@@ -398,6 +421,9 @@ pub fn transpose(a: NdFloat) -> NdFloat
     NdFloat { data: a.data, shape: ndshape.reverse_axes(a.shape), offset: a.offset }
 
 // Two axes exchanged.  A view, so it does not copy.
+//
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
 //
 // ```novo
 // use ndfloat
@@ -422,6 +448,9 @@ pub fn swap_axes(a: NdFloat, first: Int, second: Int) -> Result<NdFloat, NdFault
 // unchanged, because the sliced axis is narrower rather than gone,
 // which is what makes a slice stackable.  Out-of-order or
 // out-of-range bounds are `NdBadRange`.
+//
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
 //
 // ```novo
 // use ndfloat
@@ -458,6 +487,9 @@ pub fn slice_axis(a: NdFloat, axis: Int, start: Int, stop: Int) -> Result<NdFloa
 // rank.  A slice of one keeps the axis and an index removes it, and
 // both are published because a caller wants both.
 //
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
+//
 // ```novo
 // use ndfloat
 //
@@ -474,7 +506,7 @@ pub fn index_axis(a: NdFloat, axis: Int, at: Int) -> Result<NdFloat, NdFault>
         Err(e) => Err(e)
         Ok(s)  =>
             if at < 0 or at >= a.shape.dims[axis]
-                return Err(NdIndexOutOfRange([at], a.shape.dims))
+                return Err(NdIndexOutOfRange([at], list.clone(a.shape.dims)))
             Ok(NdFloat { data: a.data, shape: s, offset: a.offset + at * a.shape.strides[axis] })
 
 // The array stretched to a shape it broadcasts to.  A view, so it does
@@ -482,6 +514,9 @@ pub fn index_axis(a: NdFloat, axis: Int, at: Int) -> Result<NdFloat, NdFault>
 //
 // The rule is `ndshape.broadcast`, and this is where a caller reaches
 // it directly.  The arithmetic below reaches it for the caller.
+//
+// The array keeps a copy of `dims`.  It shares `a`'s buffer, which
+// nothing in the package writes into and no caller is handed.
 //
 // ```novo
 // use ndfloat
@@ -833,7 +868,7 @@ pub fn ge(left: NdFloat, right: NdFloat) -> Result<NdMask, NdFault>
 pub fn select(a: NdFloat, keep: NdMask) -> Result<NdFloat, NdFault>
     let picked = ndbool.shape(keep)
     if a.shape.dims != picked.dims
-        return Err(NdShapeMismatch(a.shape.dims, picked.dims))
+        return Err(NdShapeMismatch(list.clone(a.shape.dims), picked.dims))
     let vals = nf_read(a)
     let flags = ndbool.to_list(keep)
     var out: [Float] = []
@@ -1195,7 +1230,7 @@ pub fn dot(left: NdFloat, right: NdFloat) -> Result<Float, NdFault>
     if rr != 1
         return Err(NdNotMatrix("dot", rr))
     if left.shape.dims[0] != right.shape.dims[0]
-        return Err(NdShapeMismatch(left.shape.dims, right.shape.dims))
+        return Err(NdShapeMismatch(list.clone(left.shape.dims), list.clone(right.shape.dims)))
     let l = nf_read(left)
     let r = nf_read(right)
     var total = 0.0
@@ -1242,7 +1277,7 @@ pub fn matmul(left: NdFloat, right: NdFloat) -> Result<NdFloat, NdFault>
     if rr == 2
         cols = right.shape.dims[1]
     if inner != right.shape.dims[0]
-        return Err(NdShapeMismatch(left.shape.dims, right.shape.dims))
+        return Err(NdShapeMismatch(list.clone(left.shape.dims), list.clone(right.shape.dims)))
     let l = nf_read(left)
     let r = nf_read(right)
     var out: [Float] = []
@@ -1333,7 +1368,7 @@ fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
     let r = list.len(s.dims)
     let n = list.len(dims)
     if n < r
-        return Err(NdNotBroadcastable(s.dims, dims))
+        return Err(NdNotBroadcastable(list.clone(s.dims), list.clone(dims)))
     var strides: [Int] = []
     for i in 0..n
         let si = i - (n - r)
@@ -1347,8 +1382,8 @@ fn nf_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
         elif d == 1
             strides = list.push(strides, 0)
         else
-            return Err(NdNotBroadcastable(s.dims, dims))
-    Ok(NdShape { dims: dims, strides: strides })
+            return Err(NdNotBroadcastable(list.clone(s.dims), list.clone(dims)))
+    Ok(NdShape { dims: list.clone(dims), strides: strides })
 
 // The strides that read `s` over `dims`, where `dims` is already a
 // shape `s` broadcasts to.

@@ -54,6 +54,10 @@ pub struct NdInt
 // `NdSizeMismatch` when the product of `dims` is not the length of
 // `data`, and `NdBadRange` for a negative dimension.
 //
+// The array keeps its own copies of `data` and `dims`, as numpy's
+// `np.array` copies a list, so a later write into either list does not
+// reach the array.
+//
 // ```novo
 // use ndint
 //
@@ -70,7 +74,7 @@ pub fn of_list(data: [Int], dims: [Int]) -> Result<NdInt, NdFault>
     let want = ndshape.size(s)
     if want != list.len(data)
         return Err(NdSizeMismatch(want, list.len(data)))
-    Ok(NdInt { data: data, shape: s, offset: 0 })
+    Ok(NdInt { data: list.clone(data), shape: s, offset: 0 })
 
 // The rank-0 array holding one integer, which broadcasts against every
 // shape.
@@ -86,6 +90,8 @@ pub fn scalar(value: Int) -> NdInt
 
 // An array of this shape, every element 0.
 //
+// The array keeps a copy of `dims`.
+//
 // ```novo
 // use ndint
 //
@@ -99,6 +105,8 @@ pub fn zeros(dims: [Int]) -> Result<NdInt, NdFault>
 
 // An array of this shape, every element 1.
 //
+// The array keeps a copy of `dims`.
+//
 // ```novo
 // use ndint
 //
@@ -111,6 +119,8 @@ pub fn ones(dims: [Int]) -> Result<NdInt, NdFault>
     filled(dims, 1)
 
 // An array of this shape, every element the same integer.
+//
+// The array keeps a copy of `dims`.
 //
 // ```novo
 // use ndint
@@ -164,6 +174,8 @@ pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
 
 // This array's layout.
 //
+// Answers a copy; the array keeps its own lists.
+//
 // ```novo
 // use ndint
 //
@@ -173,7 +185,7 @@ pub fn arange(start: Int, stop: Int, step: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn shape(a: NdInt) -> NdShape
-    a.shape
+    NdShape { dims: list.clone(a.shape.dims), strides: list.clone(a.shape.strides) }
 
 // How many axes this array has.
 //
@@ -252,6 +264,8 @@ pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
 
 // Every element in row-major order, view or not.
 //
+// Answers a new list every time; the array keeps its own buffer.
+//
 // ```novo
 // use ndint
 //
@@ -261,10 +275,14 @@ pub fn with(a: NdInt, index: [Int], value: Int) -> Result<NdInt, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(a: NdInt) -> [Int]
-    ni_read(a)
+    // The packed case of `ni_read` hands back the buffer itself.
+    list.clone(ni_read(a))
 
 // The same elements under a different shape.  A view when the array is
 // packed, and a copy when it is not.
+//
+// The array keeps a copy of `dims`.  A view shares `a`'s buffer, which
+// nothing in the package writes into and no caller is handed.
 //
 // ```novo
 // use ndint
@@ -291,6 +309,9 @@ pub fn reshape(a: NdInt, dims: [Int]) -> Result<NdInt, NdFault>
 
 // Every axis reversed.  A view, so it does not copy.
 //
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
+//
 // ```novo
 // use ndint
 //
@@ -303,6 +324,9 @@ pub fn transpose(a: NdInt) -> NdInt
     NdInt { data: a.data, shape: ndshape.reverse_axes(a.shape), offset: a.offset }
 
 // Two axes exchanged.  A view, so it does not copy.
+//
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
 //
 // ```novo
 // use ndint
@@ -322,6 +346,9 @@ pub fn swap_axes(a: NdInt, first: Int, second: Int) -> Result<NdInt, NdFault>
 
 // The positions `[start, stop)` along one axis, every other axis
 // whole.  A view, and rank is unchanged.
+//
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
 //
 // ```novo
 // use ndint
@@ -353,6 +380,9 @@ pub fn slice_axis(a: NdInt, axis: Int, start: Int, stop: Int) -> Result<NdInt, N
 // One position along one axis, with that axis dropped.  A view, so it
 // does not copy.
 //
+// It shares `a`'s buffer, which nothing in the package writes into and
+// no caller is handed.
+//
 // ```novo
 // use ndint
 //
@@ -369,11 +399,14 @@ pub fn index_axis(a: NdInt, axis: Int, at: Int) -> Result<NdInt, NdFault>
         Err(e) => Err(e)
         Ok(s)  =>
             if at < 0 or at >= a.shape.dims[axis]
-                return Err(NdIndexOutOfRange([at], a.shape.dims))
+                return Err(NdIndexOutOfRange([at], list.clone(a.shape.dims)))
             Ok(NdInt { data: a.data, shape: s, offset: a.offset + at * a.shape.strides[axis] })
 
 // The array stretched to a shape it broadcasts to, by
 // `ndshape.broadcast`.  A view, so it does not copy.
+//
+// The array keeps a copy of `dims`.  It shares `a`'s buffer, which
+// nothing in the package writes into and no caller is handed.
 //
 // ```novo
 // use ndint
@@ -680,7 +713,7 @@ pub fn ge(left: NdInt, right: NdInt) -> Result<NdMask, NdFault>
 pub fn select(a: NdInt, keep: NdMask) -> Result<NdInt, NdFault>
     let picked = ndbool.shape(keep)
     if a.shape.dims != picked.dims
-        return Err(NdShapeMismatch(a.shape.dims, picked.dims))
+        return Err(NdShapeMismatch(list.clone(a.shape.dims), picked.dims))
     let vals = ni_read(a)
     let flags = ndbool.to_list(keep)
     var out: [Int] = []
@@ -719,7 +752,7 @@ pub fn take(a: NdInt, axis: Int, positions: [Int]) -> Result<NdInt, NdFault>
         return Err(NdAxisOutOfRange(axis, r))
     for p in positions
         if p < 0 or p >= a.shape.dims[axis]
-            return Err(NdIndexOutOfRange(positions, a.shape.dims))
+            return Err(NdIndexOutOfRange(list.clone(positions), list.clone(a.shape.dims)))
     // A gather is not expressible as strides, so the walk substitutes the
     // caller's positions for the gathered axis and materialises.
     var acc: [Int] = [a.offset]
@@ -926,7 +959,7 @@ pub fn dot(left: NdInt, right: NdInt) -> Result<Int, NdFault>
     if rr != 1
         return Err(NdNotMatrix("dot", rr))
     if left.shape.dims[0] != right.shape.dims[0]
-        return Err(NdShapeMismatch(left.shape.dims, right.shape.dims))
+        return Err(NdShapeMismatch(list.clone(left.shape.dims), list.clone(right.shape.dims)))
     let l = ni_read(left)
     let r = ni_read(right)
     var total = 0
@@ -966,7 +999,7 @@ pub fn matmul(left: NdInt, right: NdInt) -> Result<NdInt, NdFault>
     if rr == 2
         cols = right.shape.dims[1]
     if inner != right.shape.dims[0]
-        return Err(NdShapeMismatch(left.shape.dims, right.shape.dims))
+        return Err(NdShapeMismatch(list.clone(left.shape.dims), list.clone(right.shape.dims)))
     let l = ni_read(left)
     let r = ni_read(right)
     var out: [Int] = []
@@ -1049,7 +1082,7 @@ fn ni_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
     let r = list.len(s.dims)
     let n = list.len(dims)
     if n < r
-        return Err(NdNotBroadcastable(s.dims, dims))
+        return Err(NdNotBroadcastable(list.clone(s.dims), list.clone(dims)))
     var strides: [Int] = []
     for i in 0..n
         let si = i - (n - r)
@@ -1063,8 +1096,8 @@ fn ni_stretch(s: NdShape, dims: [Int]) -> Result<NdShape, NdFault>
         elif d == 1
             strides = list.push(strides, 0)
         else
-            return Err(NdNotBroadcastable(s.dims, dims))
-    Ok(NdShape { dims: dims, strides: strides })
+            return Err(NdNotBroadcastable(list.clone(s.dims), list.clone(dims)))
+    Ok(NdShape { dims: list.clone(dims), strides: strides })
 
 // The strides that read `s` over `dims`, where `dims` is already a
 // shape `s` broadcasts to.

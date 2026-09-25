@@ -310,3 +310,74 @@ fn test_to_float_is_the_bridge_out_of_the_integers() [io]
     match ndfloat.mean(ndint.to_float(vec3()))
         Ok(m)  => test.assert(m == 2.0)
         Err(e) => test.fail("mean of a widened array failed: ${e.message()}")
+
+@test
+fn test_an_array_copies_the_lists_it_is_built_from() [io]
+    test.case("of_list keeps its own buffer and its own dims")
+    var data = [1, 2, 3, 4]
+    var dims = [2, 2]
+    match ndint.of_list(data, dims)
+        Ok(a)  =>
+            data[0] = 9
+            dims[0] = 4
+            test.assert(ndint.to_list(a) == [1, 2, 3, 4])
+            test.assert(ndint.shape(a).dims == [2, 2])
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("filled, zeros and ones keep their own dims")
+    var fdims = [2, 3]
+    match ndint.filled(fdims, 4)
+        Ok(f)  =>
+            match ndint.zeros(fdims)
+                Ok(z)  =>
+                    match ndint.ones(fdims)
+                        Ok(o)  =>
+                            fdims[1] = 7
+                            test.assert(ndint.shape(f).dims == [2, 3])
+                            test.assert(ndint.shape(z).dims == [2, 3])
+                            test.assert(ndint.shape(o).dims == [2, 3])
+                        Err(e) => test.fail("ones failed: ${e.message()}")
+                Err(e) => test.fail("zeros failed: ${e.message()}")
+        Err(e) => test.fail("filled failed: ${e.message()}")
+
+    test.case("reshape and broadcast_to keep their own dims")
+    var rdims = [3, 1]
+    match ndint.reshape(vec3(), rdims)
+        Ok(r)  =>
+            rdims[0] = 1
+            test.assert(ndint.shape(r).dims == [3, 1])
+        Err(e) => test.fail("reshape failed: ${e.message()}")
+    var bdims = [2, 3]
+    match ndint.broadcast_to(vec3(), bdims)
+        Ok(b)  =>
+            bdims[0] = 5
+            test.assert(ndint.shape(b).dims == [2, 3])
+            test.assert(ndint.size(b) == 6)
+        Err(e) => test.fail("broadcast_to failed: ${e.message()}")
+
+@test
+fn test_an_array_hands_out_copies() [io]
+    test.case("a write into the answered shape does not reach the array")
+    let a = mat22()
+    var dims = ndint.shape(a).dims
+    var strides = ndint.shape(a).strides
+    dims[0] = 5
+    strides[0] = 0
+    test.assert(ndint.shape(a).dims == [2, 2])
+    test.assert(ndint.shape(a).strides == [2, 1])
+
+    test.case("a write into the answered list does not reach the buffer")
+    var xs = ndint.to_list(a)
+    xs[0] = 9
+    test.assert(ndint.to_list(a) == [1, 2, 3, 4])
+
+    test.case("a fault carries a copy of the array's dims")
+    match ndint.take(a, 0, [5])
+        Ok(_)  => test.fail("position 5 on an axis of 2")
+        Err(e) =>
+            match e
+                NdIndexOutOfRange(_, got) =>
+                    var d = got
+                    d[0] = 7
+                    test.assert(ndint.shape(a).dims == [2, 2])
+                _                         => test.fail("the wrong fault: ${e.message()}")

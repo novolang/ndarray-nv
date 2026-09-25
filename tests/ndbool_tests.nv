@@ -149,3 +149,38 @@ fn test_to_int_and_of_int_are_the_only_place_the_two_meet() [io]
 
     test.case("to_int then of_int is the identity on a mask")
     test.assert(ndbool.to_list(ndbool.of_int(ndbool.to_int(three()))) == [true, false, true])
+
+@test
+fn test_a_mask_copies_the_lists_it_is_built_from() [io]
+    test.case("of_list keeps its own buffer and its own dims")
+    var data = [true, false, true, true]
+    var dims = [2, 2]
+    match ndbool.of_list(data, dims)
+        Ok(m)  =>
+            data[0] = false
+            dims[0] = 4
+            test.assert(ndbool.to_list(m) == [true, false, true, true])
+            test.assert(ndbool.shape(m).dims == [2, 2])
+        Err(e) => test.fail("of_list failed: ${e.message()}")
+
+    test.case("filled keeps its own dims")
+    var fdims = [2, 3]
+    match ndbool.filled(fdims, true)
+        Ok(f)  =>
+            fdims[1] = 7
+            test.assert(ndbool.shape(f).dims == [2, 3])
+        Err(e) => test.fail("filled failed: ${e.message()}")
+
+@test
+fn test_a_mask_hands_out_copies() [io]
+    test.case("a write into the answered shape does not reach the mask")
+    let m = mat22()
+    var dims = ndbool.shape(m).dims
+    dims[0] = 5
+    test.assert(ndbool.shape(m).dims == [2, 2])
+
+    test.case("a write into the answered list does not reach the buffer")
+    let before = ndbool.to_list(m)
+    var xs = ndbool.to_list(m)
+    xs[0] = xs[0] == false
+    test.assert(ndbool.to_list(m) == before)

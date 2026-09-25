@@ -5,6 +5,30 @@ All notable changes to ndarray-nv are recorded here. The format is
 package follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 with the pre-1.0 rule that a breaking change bumps the MINOR number.
 
+## 0.1.3 — 2026-09-25
+
+Under the 0.10.0 toolchain a list is one list under every name that
+holds it, so an array built from a caller's list, or a list an array
+answered, could be written through by the caller and change the array
+under it.  An array now copies at its boundary, the way NumPy's
+`np.array` copies a Python list, and stays a value whose shape and
+data no caller shares.
+
+### Changed
+
+- `of_list` in `ndfloat`, `ndint` and `ndbool` keeps its own copies of
+  the buffer and the dims.  `ndshape.of_dims` keeps a copy of the dims,
+  so `filled`, `zeros`, `ones`, `reshape` and `broadcast_to` keep one
+  too.
+- `shape` in `ndfloat`, `ndint` and `ndbool` answers a shape with
+  copies of the dims and the strides, and `to_list` answers a new list
+  every time, where before a packed array handed back its own buffer.
+- A fault that carries an array's dims carries a copy of them.
+- The views (`transpose`, `swap_axes`, `slice_axis`, `index_axis`,
+  `broadcast_to` and the packed case of `reshape`) still share the
+  source array's buffer.  Nothing writes into it and no caller is
+  handed it.
+
 ## 0.1.2 — 2026-09-24
 
 The package builds under the list rule of the next toolchain, where a

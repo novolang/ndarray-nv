@@ -26,11 +26,13 @@
 // attached, because a view aliases memory somebody else can write
 // through, and a reader who does not know which operations view and
 // which copy gets a wrong answer.  Here it comes with no warning at
-// all.  A novo-lang list is a value, and nothing in this package
-// mutates an array in place, so there is no writer and no aliasing
-// hazard for a view to expose.  `ndfloat.with` answers a new array
-// rather than writing into the old one.  A view is free and it is
-// safe, and those two facts have the same cause.
+// all.  An array copies every list it is built from and every list it
+// hands out, so no caller ever holds an array's buffer or shape, and
+// nothing in this package writes into an array in place.  There is no
+// writer, and no aliasing hazard for a view to expose.
+// `ndfloat.with` answers a new array rather than writing into the old
+// one.  A view is free and it is safe, and those two facts have the
+// same cause.
 //
 // What that buys is the reason to carry strides at all.  A transpose
 // of a million-element matrix is a list of two integers reversed.
@@ -78,6 +80,9 @@ pub struct NdShape
 // extent.  `[2, 3]` gets `[3, 1]`, and element `[1, 2]` is at flat
 // position 5.
 //
+// The shape keeps a copy of `dims`, so a later write into the caller's
+// list does not reach it.
+//
 // ```novo
 // use ndshape
 //
@@ -94,7 +99,7 @@ pub fn of_dims(dims: [Int]) -> NdShape
         acc = acc * dims[i]
         i = i - 1
     strides = list.reverse(strides)
-    NdShape { dims: dims, strides: strides }
+    NdShape { dims: list.clone(dims), strides: strides }
 
 // The shape of a scalar: rank 0, one element, no axes.
 //
@@ -178,7 +183,7 @@ pub fn flat_index(s: NdShape, index: [Int]) -> Result<Int, NdFault>
     var flat = 0
     for i in 0..r
         if index[i] < 0 or index[i] >= s.dims[i]
-            return Err(NdIndexOutOfRange(index, s.dims))
+            return Err(NdIndexOutOfRange(index, list.clone(s.dims)))
         flat = flat + index[i] * s.strides[i]
     Ok(flat)
 
@@ -238,7 +243,7 @@ pub fn broadcast(left: NdShape, right: NdShape) -> Result<NdShape, NdFault>
         elif rd == 1
             dims = list.push(dims, ld)
         else
-            return Err(NdNotBroadcastable(left.dims, right.dims))
+            return Err(NdNotBroadcastable(list.clone(left.dims), list.clone(right.dims)))
     Ok(of_dims(dims))
 
 // The shape with two axes exchanged.

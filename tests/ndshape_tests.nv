@@ -168,3 +168,12 @@ fn test_fits_bounds_the_buffer_by_what_the_shape_reaches() [io]
 
     test.case("a stretched axis addresses no new memory")
     test.assert(ndshape.fits(NdShape { dims: [4, 3], strides: [0, 1] }, 0, 3))
+
+@test
+fn test_of_dims_keeps_its_own_dims() [io]
+    test.case("a write into the caller's list after construction does not reach the shape")
+    var dims = [2, 3]
+    let s = ndshape.of_dims(dims)
+    dims[0] = 9
+    test.assert(s.dims == [2, 3])
+    test.assert(ndshape.size(s) == 6)

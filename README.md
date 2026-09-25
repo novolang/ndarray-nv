@@ -45,8 +45,10 @@ A **view** is a new shape over a buffer that already exists. Because a
 view copies nothing, transposing a million-element matrix costs a list of
 two integers reversed. NumPy's views alias memory that another holder can
 write through, so a NumPy user has to know which operations view and
-which copy. That hazard does not exist here. A novo-lang list is a value,
-and no function in this package writes into an array in place, so there
+which copy. That hazard does not exist here. An array copies the lists it
+is built from and the lists it hands out, the way NumPy's `np.array`
+copies a Python list, so no caller shares its shape or its data. No
+function in this package writes into an array in place either, so there
 is no writer for a view to expose.
 
 **Broadcasting** is the rule that lets two arrays of different shapes

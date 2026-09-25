@@ -51,6 +51,10 @@ pub struct NdMask
 // `NdSizeMismatch` when the product of `dims` is not the length of
 // `data`, and `NdBadRange` for a negative dimension.
 //
+// The array keeps its own copies of `data` and `dims`, as numpy's
+// `np.array` copies a list, so a later write into either list does not
+// reach the array.
+//
 // ```novo
 // use ndbool
 //
@@ -67,9 +71,11 @@ pub fn of_list(data: [Bool], dims: [Int]) -> Result<NdMask, NdFault>
     let want = ndshape.size(s)
     if want != list.len(data)
         return Err(NdSizeMismatch(want, list.len(data)))
-    Ok(NdMask { data: data, shape: s, offset: 0 })
+    Ok(NdMask { data: list.clone(data), shape: s, offset: 0 })
 
 // A mask of this shape with every position set the same way.
+//
+// The array keeps a copy of `dims`.
 //
 // ```novo
 // use ndbool
@@ -89,6 +95,8 @@ pub fn filled(dims: [Int], value: Bool) -> Result<NdMask, NdFault>
 
 // This mask's layout.
 //
+// Answers a copy; the array keeps its own lists.
+//
 // ```novo
 // use ndbool
 //
@@ -98,7 +106,7 @@ pub fn filled(dims: [Int], value: Bool) -> Result<NdMask, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn shape(m: NdMask) -> NdShape
-    m.shape
+    NdShape { dims: list.clone(m.shape.dims), strides: list.clone(m.shape.strides) }
 
 // How many positions this mask has, true and false together.
 //
@@ -137,6 +145,8 @@ pub fn at(m: NdMask, index: [Int]) -> Result<Bool, NdFault>
 // transposed or broadcast mask and costs one element's work per
 // element.
 //
+// Answers a new list every time; the array keeps its own buffer.
+//
 // ```novo
 // use ndbool
 //
@@ -146,7 +156,8 @@ pub fn at(m: NdMask, index: [Int]) -> Result<Bool, NdFault>
 //         Err(e) => println(e.message())
 // ```
 pub fn to_list(m: NdMask) -> [Bool]
-    nb_read(m)
+    // The packed case of `nb_read` hands back the buffer itself.
+    list.clone(nb_read(m))
 
 // Whether every position is true.
 //
@@ -296,6 +307,9 @@ pub fn invert(m: NdMask) -> NdMask
     NdMask { data: out, shape: ndshape.of_dims(m.shape.dims), offset: 0 }
 
 // The mask with two axes exchanged.  A view, so it does not copy.
+//
+// It shares `m`'s buffer, which nothing in the package writes into and
+// no caller is handed.
 //
 // ```novo
 // use ndbool
