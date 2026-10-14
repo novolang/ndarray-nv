@@ -14,11 +14,11 @@
 // This is a program and not a `@test`.  A wall-clock assertion fails
 // on a loaded build machine and tells nobody anything, so this prints
 // a number and the reader decides.  `novo test` never runs it, because
-// the file is not named `*_tests.nv`, and `matmul` itself is asserted
-// in three suites that are.
+// it is not under `tests/`, where a file with no `@test` fails the run,
+// and `matmul` itself is asserted in three suites that are.
 //
-//     novo run tests/bench_matmul.nv
-//     novo run tests/bench_matmul.nv --interp
+//     novo run examples/bench_matmul.nv
+//     novo run examples/bench_matmul.nv --interp
 //
 // `bench.black_box_float` is what keeps the answer alive.  Without it
 // LLVM can see that nothing reads the products and delete the loop,

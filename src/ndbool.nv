@@ -25,6 +25,12 @@
 // that way without ceremony, which is why a mask does not have to be
 // an `NdInt` of 0s and 1s to avoid a cycle.
 
+// `ndint` is named below without a `use` line: it imports this module,
+// and the pair is refused as a cycle
+// (language/a-package-module-resolves-a-sibling-s-name-that-it-cannot-import).
+use ndfault
+use ndshape
+
 // A shaped array of truths, as a comparison leaves it.
 //
 // ```novo

@@ -87,7 +87,7 @@ answers, and the one fault type. `stability = "experimental"`.
 - `tests/property_tests.nv` — 12000 checks of twenty-odd laws over 200
   shapes generated from the case number. It is also a program: `novo
   run` and `novo run --interp` print the same digest line.
-- `tests/bench_matmul.nv` — a program, not a test. On the machine this
+- `examples/bench_matmul.nv` — a program, not a test. On the machine this
   release was built on, a 64-by-64 `ndfloat.matmul` takes 0.59 ms and
   an `ndint.matmul` 0.32 ms, which is 2.26 and 1.23 ns per
   multiply-add. It is here to be a baseline, not a target.

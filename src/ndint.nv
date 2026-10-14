@@ -28,6 +28,9 @@
 // `ndshape`.
 
 use std.math
+use ndbool
+use ndfloat
+use ndshape
 
 // An N-dimensional array of Int over a flat buffer.
 //

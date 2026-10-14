@@ -46,6 +46,8 @@
 // safe.
 
 use std.math
+use ndbool
+use ndshape
 
 // An N-dimensional array of Float over a flat buffer.
 //

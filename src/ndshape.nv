@@ -46,6 +46,8 @@
 // The broadcasting rule is written once, in `broadcast` below, and
 // every other page in the package points at it.
 
+use ndfault
+
 // The layout of an array: its extent along each axis, and the step
 // through the flat buffer that moves one place along it.
 //

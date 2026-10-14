@@ -297,7 +297,7 @@ novo run tests/property_tests.nv --interp
 
 print the same line from the compiled and the interpreted backend.
 
-`tests/bench_matmul.nv` is a program, not a test. It times twenty
+`examples/bench_matmul.nv` is a program, not a test. It times twenty
 64-by-64 matrix multiplies of each array type and prints the
 per-multiply figure, so a later release has something to compare
 against. On the machine this release was built on a 64-by-64
