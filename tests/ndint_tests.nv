@@ -9,6 +9,7 @@ use std.test
 use ndint
 use ndfloat
 use ndbool
+use ndshape
 
 // [1, 2, 3], packed.
 fn vec3() -> NdInt

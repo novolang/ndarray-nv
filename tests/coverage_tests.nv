@@ -17,6 +17,7 @@ use ndshape
 use ndfloat
 use ndint
 use ndbool
+use ndfault
 
 // ── ndfault: nine variants, and each prints both sides ─────────────
 

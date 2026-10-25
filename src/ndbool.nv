@@ -30,6 +30,7 @@
 // (language/a-package-module-resolves-a-sibling-s-name-that-it-cannot-import).
 use ndfault
 use ndshape
+use ndint
 
 // A shaped array of truths, as a comparison leaves it.
 //

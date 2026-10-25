@@ -48,6 +48,8 @@
 use std.math
 use ndbool
 use ndshape
+use ndfault
+use ndint
 
 // An N-dimensional array of Float over a flat buffer.
 //
